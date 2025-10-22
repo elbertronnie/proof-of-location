@@ -1,0 +1,24 @@
+version: '3.8'
+services:
+  builder:
+    build:
+      context: ./docker/development-container
+      dockerfile: Dockerfile
+      args:
+        - USER_ID=${UID:-1000}
+    image: solochain-debian-builder:latest
+    volumes:
+      - ./:/workspace:cached
+      # Use a dedicated cargo cache directory to avoid permission issues
+      - cargo-cache:/home/builder/.cargo
+    working_dir: /workspace
+    tty: true
+    stdin_open: true
+    environment:
+      - CARGO_HOME=/home/builder/.cargo
+      - HOME=/home/builder
+    # Don't run as root on host chown issues; drop privileges handled in entrypoint
+    command: [ "/bin/bash" ]
+
+volumes:
+  cargo-cache:
