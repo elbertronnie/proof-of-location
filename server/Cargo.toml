@@ -1,0 +1,13 @@
+[package]
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+name = "server"
+repository.workspace = true
+version = "0.1.0"
+
+[dependencies]
+btleplug = "0.11"
+futures = "0.3"
+tokio = { version = "1.0", features = ["full"] }
