@@ -41,6 +41,6 @@ WORKDIR /workspace
 # Install rustup and a default toolchain (stable). We add common components/targets used by Substrate projects.
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
 RUN ${HOME}/.cargo/bin/rustup component add rustfmt clippy rust-src || true
-RUN ${HOME}/.cargo/bin/rustup target add wasm32-unknown-unknown || true
+RUN ${HOME}/.cargo/bin/rustup target add wasm32v1-none || true
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
