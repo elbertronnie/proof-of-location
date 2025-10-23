@@ -1,14 +1,42 @@
-use btleplug::api::{Central, Manager as _, Peripheral as _, ScanFilter};
+use btleplug::api::{BDAddr, Central, Manager as _, Peripheral as _, ScanFilter};
 use btleplug::platform::Manager;
 use futures::stream::StreamExt;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::time::Duration;
 use tokio::time;
 
+fn get_bluetooth_addresses() -> HashSet<BDAddr> {
+    std::env::var("BLUETOOTH_ADDRESSES")
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.parse().unwrap())
+        .collect()
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    // Load environment variables from .env file
+    dotenvy::dotenv().ok();
+
     println!("Starting Bluetooth RSSI Scanner...\n");
+
+    // Get the list of target Bluetooth addresses to monitor
+    let target_set = get_bluetooth_addresses();
+
+    if target_set.is_empty() {
+        eprintln!("No Bluetooth addresses configured in BLUETOOTH_ADDRESSES environment variable!");
+        eprintln!("Please set BLUETOOTH_ADDRESSES with comma-separated addresses.");
+        return Ok(());
+    }
+
+    println!("Monitoring {} device(s):", target_set.len());
+    for addr in &target_set {
+        println!("  - {}", addr);
+    }
+    println!();
 
     // Get the Bluetooth adapter
     let manager = Manager::new().await?;
@@ -52,6 +80,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         let props = peripheral.properties().await?;
 
                         if let Some(properties) = props {
+                            // Only process devices in our target list
+                            if !target_set.contains(&properties.address) {
+                                continue;
+                            }
+
                             let address = properties.address.to_string();
                             let name = properties
                                 .local_name
