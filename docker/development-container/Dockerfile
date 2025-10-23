@@ -22,6 +22,8 @@ RUN apt-get update \
     libudev-dev \
     make \
     protobuf-compiler \
+    libdbus-1-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # create an unprivileged user (UID can be overridden at build time)
