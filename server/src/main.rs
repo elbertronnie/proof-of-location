@@ -16,6 +16,21 @@ fn get_bluetooth_addresses() -> HashSet<BDAddr> {
         .collect()
 }
 
+fn calculate_median(values: &mut Vec<i16>) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+
+    values.sort_unstable();
+    let len = values.len();
+
+    if len % 2 == 0 {
+        Some((values[len / 2 - 1] as f64 + values[len / 2] as f64) / 2.0)
+    } else {
+        Some(values[len / 2] as f64)
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // Load environment variables from .env file
@@ -52,20 +67,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Start scanning for devices
     central.start_scan(ScanFilter::default()).await?;
-    println!("Scanning for Bluetooth devices...\n");
-    println!(
-        "{:<40} {:<20} {:>10}",
-        "Device Address", "Name", "RSSI (dBm)"
-    );
-    println!("{}", "=".repeat(75));
+    println!("Scanning for 60 seconds...\n");
 
     // Create a stream of events
     let mut events = central.events().await?;
 
-    // Keep track of devices we've already printed
-    let mut seen_devices: HashMap<String, i16> = HashMap::new();
+    // Keep track of all RSSI values for each device
+    let mut rssi_records: HashMap<BDAddr, Vec<i16>> = HashMap::new();
+    let mut device_names: HashMap<BDAddr, String> = HashMap::new();
 
-    // Scan for 60 seconds and print RSSI values
+    // Scan for 60 seconds and record RSSI values
     let scan_duration = Duration::from_secs(60);
     let start_time = time::Instant::now();
 
@@ -85,22 +96,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 continue;
                             }
 
-                            let address = properties.address.to_string();
+                            let address = properties.address;
                             let name = properties
                                 .local_name
                                 .unwrap_or_else(|| "Unknown".to_string());
                             let rssi = properties.rssi.unwrap_or(0);
 
-                            // Only print if RSSI has changed or is new
+                            // Record RSSI value if non-zero
                             if rssi != 0 {
-                                let should_print = seen_devices
-                                    .get(&address)
-                                    .map_or(true, |&old_rssi| old_rssi != rssi);
-
-                                if should_print {
-                                    println!("{:<40} {:<20} {:>10} dBm", address, name, rssi);
-                                    seen_devices.insert(address, rssi);
-                                }
+                                rssi_records.entry(address).or_insert_with(Vec::new).push(rssi);
+                                device_names.insert(address, name);
                             }
                         }
                     }
@@ -113,8 +118,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     println!("\n{}", "=".repeat(75));
-    println!("Scan complete!");
-    println!("Total devices found: {}", seen_devices.len());
+    println!("Scan complete!\n");
+
+    // Print median RSSI values
+    println!(
+        "{:<40} {:<20} {:>15} {:>10}",
+        "Device Address", "Name", "Median RSSI", "Samples"
+    );
+    println!("{}", "=".repeat(90));
+
+    for (address, rssi_values) in rssi_records.iter_mut() {
+        let name = device_names
+            .get(address)
+            .map(|s| s.as_str())
+            .unwrap_or("Unknown");
+        let sample_count = rssi_values.len();
+
+        if let Some(median) = calculate_median(rssi_values) {
+            println!(
+                "{:<40} {:<20} {:>13.1} dBm {:>10}",
+                address, name, median, sample_count
+            );
+        }
+    }
+
+    println!("\n{}", "=".repeat(90));
+    println!("Total devices found: {}", rssi_records.len());
 
     // Stop scanning
     central.stop_scan().await?;
