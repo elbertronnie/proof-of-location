@@ -1,10 +1,25 @@
+use axum::{http::StatusCode, routing::get, Json, Router};
 use btleplug::api::{BDAddr, Central, Manager as _, Peripheral as _, ScanFilter};
 use btleplug::platform::Manager;
 use futures::stream::StreamExt;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::time::Duration;
 use tokio::time;
+
+
+#[derive(Serialize, Deserialize)]
+struct DeviceRssi {
+    address: [u8; 6],
+    name: String,
+    rssi: f64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct RssiResponse {
+    devices: Vec<DeviceRssi>,
+}
 
 fn get_bluetooth_addresses() -> HashSet<BDAddr> {
     std::env::var("BLUETOOTH_ADDRESSES")
@@ -31,43 +46,44 @@ fn calculate_median(values: &mut Vec<i16>) -> Option<f64> {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    // Load environment variables from .env file
-    dotenvy::dotenv().ok();
+async fn scan_rssi() -> Result<Json<RssiResponse>, (StatusCode, String)> {
+    match perform_bluetooth_scan().await {
+        Ok(response) => Ok(Json(response)),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Scan failed: {}", e),
+        )),
+    }
+}
 
-    println!("Starting Bluetooth RSSI Scanner...\n");
+async fn perform_bluetooth_scan() -> Result<RssiResponse, Box<dyn Error>> {
+    println!("Starting Bluetooth RSSI scan...");
 
     // Get the list of target Bluetooth addresses to monitor
     let target_set = get_bluetooth_addresses();
 
     if target_set.is_empty() {
-        eprintln!("No Bluetooth addresses configured in BLUETOOTH_ADDRESSES environment variable!");
-        eprintln!("Please set BLUETOOTH_ADDRESSES with comma-separated addresses.");
-        return Ok(());
+        return Err(
+            "No Bluetooth addresses configured in BLUETOOTH_ADDRESSES environment variable".into(),
+        );
     }
 
-    println!("Monitoring {} device(s):", target_set.len());
-    for addr in &target_set {
-        println!("  - {}", addr);
-    }
-    println!();
+    println!("Monitoring {} device(s)", target_set.len());
 
     // Get the Bluetooth adapter
     let manager = Manager::new().await?;
     let adapters = manager.adapters().await?;
 
     if adapters.is_empty() {
-        eprintln!("No Bluetooth adapters found!");
-        return Ok(());
+        return Err("No Bluetooth adapters found".into());
     }
 
     let central = &adapters[0];
-    println!("Using adapter: {:?}\n", central.adapter_info().await?);
+    println!("Using adapter: {:?}", central.adapter_info().await?);
 
     // Start scanning for devices
     central.start_scan(ScanFilter::default()).await?;
-    println!("Scanning for 60 seconds...\n");
+    println!("Scanning for 60 seconds...");
 
     // Create a stream of events
     let mut events = central.events().await?;
@@ -117,36 +133,47 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    println!("\n{}", "=".repeat(75));
-    println!("Scan complete!\n");
-
-    // Print median RSSI values
-    println!(
-        "{:<40} {:<20} {:>15} {:>10}",
-        "Device Address", "Name", "Median RSSI", "Samples"
-    );
-    println!("{}", "=".repeat(90));
-
-    for (address, rssi_values) in rssi_records.iter_mut() {
-        let name = device_names
-            .get(address)
-            .map(|s| s.as_str())
-            .unwrap_or("Unknown");
-        let sample_count = rssi_values.len();
-
-        if let Some(median) = calculate_median(rssi_values) {
-            println!(
-                "{:<40} {:<20} {:>13.1} dBm {:>10}",
-                address, name, median, sample_count
-            );
-        }
-    }
-
-    println!("\n{}", "=".repeat(90));
-    println!("Total devices found: {}", rssi_records.len());
+    println!("Scan complete!");
 
     // Stop scanning
     central.stop_scan().await?;
+
+    // Build response with median RSSI values
+    let mut devices = Vec::new();
+    for (address, mut rssi_values) in rssi_records {
+        if let Some(median_rssi) = calculate_median(&mut rssi_values) {
+            let name = device_names.get(&address).cloned().unwrap_or_else(|| "Unknown".to_string());
+            devices.push(DeviceRssi {
+                address: address.into_inner(),
+                name,
+                rssi: median_rssi,
+            });
+        }
+    }
+
+    Ok(RssiResponse { devices })
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    // Load environment variables from .env file
+    dotenvy::dotenv().ok();
+
+    println!("Starting Bluetooth RSSI Scanner Server...\n");
+
+    // Build the Axum router
+    let app = Router::new().route("/rssi", get(scan_rssi));
+
+    // Get the server port from environment or use default
+    let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());
+    let addr = format!("0.0.0.0:{}", port);
+
+    println!("Server listening on http://{}", addr);
+    println!("Access the RSSI endpoint at: http://{}/rssi\n", addr);
+
+    // Start the server
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    axum::serve(listener, app).await?;
 
     Ok(())
 }
