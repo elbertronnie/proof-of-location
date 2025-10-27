@@ -9421,8 +9421,7 @@ dependencies = [
  "btleplug",
  "dotenvy",
  "futures",
- "serde",
- "serde_json",
+ "parity-scale-codec",
  "tokio",
 ]
 

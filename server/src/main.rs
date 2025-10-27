@@ -1,22 +1,27 @@
-use axum::{http::StatusCode, routing::get, Json, Router};
+use axum::{
+    body::Body,
+    http::{header, StatusCode},
+    response::{IntoResponse, Response},
+    routing::get,
+    Router,
+};
 use btleplug::api::{BDAddr, Central, Manager as _, Peripheral as _, ScanFilter};
 use btleplug::platform::Manager;
+use codec::{Decode, Encode};
 use futures::stream::StreamExt;
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::time::Duration;
 use tokio::time;
 
-
-#[derive(Serialize, Deserialize)]
+#[derive(Encode, Decode, Debug, Clone)]
 struct DeviceRssi {
     address: [u8; 6],
-    name: String,
-    rssi: f64,
+    name: Vec<u8>,
+    rssi: i16,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Encode, Decode, Debug, Clone)]
 struct RssiResponse {
     devices: Vec<DeviceRssi>,
 }
@@ -31,7 +36,7 @@ fn get_bluetooth_addresses() -> HashSet<BDAddr> {
         .collect()
 }
 
-fn calculate_median(values: &mut Vec<i16>) -> Option<f64> {
+fn calculate_median(values: &mut Vec<i16>) -> Option<i16> {
     if values.is_empty() {
         return None;
     }
@@ -40,19 +45,30 @@ fn calculate_median(values: &mut Vec<i16>) -> Option<f64> {
     let len = values.len();
 
     if len % 2 == 0 {
-        Some((values[len / 2 - 1] as f64 + values[len / 2] as f64) / 2.0)
+        Some((values[len / 2 - 1] + values[len / 2]) / 2)
     } else {
-        Some(values[len / 2] as f64)
+        Some(values[len / 2])
     }
 }
 
-async fn scan_rssi() -> Result<Json<RssiResponse>, (StatusCode, String)> {
+async fn scan_rssi() -> impl IntoResponse {
     match perform_bluetooth_scan().await {
-        Ok(response) => Ok(Json(response)),
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Scan failed: {}", e),
-        )),
+        Ok(response) => {
+            // Encode the response using SCALE codec
+            let encoded = response.encode();
+            Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "application/octet-stream")
+                .body(Body::from(encoded))
+                .unwrap()
+        }
+        Err(e) => {
+            let error_msg = format!("Scan failed: {}", e);
+            Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from(error_msg))
+                .unwrap()
+        }
     }
 }
 
@@ -142,10 +158,13 @@ async fn perform_bluetooth_scan() -> Result<RssiResponse, Box<dyn Error>> {
     let mut devices = Vec::new();
     for (address, mut rssi_values) in rssi_records {
         if let Some(median_rssi) = calculate_median(&mut rssi_values) {
-            let name = device_names.get(&address).cloned().unwrap_or_else(|| "Unknown".to_string());
+            let name = device_names
+                .get(&address)
+                .cloned()
+                .unwrap_or_else(|| "Unknown".to_string());
             devices.push(DeviceRssi {
                 address: address.into_inner(),
-                name,
+                name: name.into_bytes(),
                 rssi: median_rssi,
             });
         }
