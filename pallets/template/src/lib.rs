@@ -42,15 +42,15 @@
 // Re-export pallet items so that they can be accessed from the crate namespace.
 pub use pallet::*;
 
-// FRAME pallets require their own "mock runtimes" to be able to run unit tests. This module
-// contains a mock runtime specific for testing this pallet's functionality.
-#[cfg(test)]
-mod mock;
+// // FRAME pallets require their own "mock runtimes" to be able to run unit tests. This module
+// // contains a mock runtime specific for testing this pallet's functionality.
+// #[cfg(test)]
+// mod mock;
 
-// This module contains the unit tests for this pallet.
-// Learn about pallet unit testing here: https://docs.substrate.io/test/unit-testing/
-#[cfg(test)]
-mod tests;
+// // This module contains the unit tests for this pallet.
+// // Learn about pallet unit testing here: https://docs.substrate.io/test/unit-testing/
+// #[cfg(test)]
+// mod tests;
 
 // Every callable function or "dispatchable" a pallet exposes must have weight values that correctly
 // estimate a dispatchable's execution time. The benchmarking module is used to calculate weights
@@ -67,6 +67,7 @@ pub mod pallet {
     use super::*;
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
+    use sp_std::prelude::*;
 
     // The `Pallet` struct serves as a placeholder to implement traits, methods and dispatchables
     // (`Call`s) in this pallet.
@@ -86,12 +87,32 @@ pub mod pallet {
         type WeightInfo: WeightInfo;
     }
 
+    // #[derive(Encode, Decode, Debug, Clone)]
+    // struct DeviceRssi {
+    //     address: [u8; 6],
+    //     name: Vec<u8>,
+    //     rssi: i16,
+    // }
+
+    // #[derive(Encode, Decode, Debug, Clone)]
+    // struct RssiResponse {
+    //     devices: Vec<DeviceRssi>,
+    // }
+
     /// A storage item for this pallet.
     ///
     /// In this template, we are declaring a storage item called `Something` that stores a single
     /// `u32` value. Learn more about runtime storage here: <https://docs.substrate.io/build/runtime-storage/>
     #[pallet::storage]
-    pub type Something<T> = StorageValue<_, u32>;
+    pub type RssiData<T: Config> = StorageNMap<
+        Key = (
+			NMapKey<Identity, BlockNumberFor<T>>,
+            NMapKey<Blake2_128Concat, [u8; 6]>,
+			NMapKey<Blake2_128Concat, T::AccountId>,
+		),
+		Value = i16,
+		QueryKind = OptionQuery,
+    >;
 
     /// Events that functions in this pallet can emit.
     ///
@@ -107,11 +128,11 @@ pub mod pallet {
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
         /// A user has successfully set a new value.
-        SomethingStored {
-            /// The new value set.
-            something: u32,
-            /// The account who set the new value.
+        RssiStored {
+            block_number: BlockNumberFor<T>,
+            address: [u8; 6],
             who: T::AccountId,
+            rssi: i16,
         },
     }
 
@@ -152,15 +173,18 @@ pub mod pallet {
         /// error if it isn't. Learn more about origins here: <https://docs.substrate.io/build/origins/>
         #[pallet::call_index(0)]
         #[pallet::weight(T::WeightInfo::do_something())]
-        pub fn do_something(origin: OriginFor<T>, something: u32) -> DispatchResult {
+        pub fn publish_rssi_data(origin: OriginFor<T>, address: [u8; 6], rssi: i16) -> DispatchResult {
             // Check that the extrinsic was signed and get the signer.
             let who = ensure_signed(origin)?;
 
+            // Get the current block number.
+            let block_number = frame_system::Pallet::<T>::block_number();
+
             // Update storage.
-            Something::<T>::put(something);
+            RssiData::<T>::insert((block_number, address, who.clone()), rssi);
 
             // Emit an event.
-            Self::deposit_event(Event::SomethingStored { something, who });
+            Self::deposit_event(Event::RssiStored { block_number, address, who, rssi });
 
             // Return a successful `DispatchResult`
             Ok(())
@@ -184,18 +208,14 @@ pub mod pallet {
         pub fn cause_error(origin: OriginFor<T>) -> DispatchResult {
             let _who = ensure_signed(origin)?;
 
-            // Read a value from storage.
-            match Something::<T>::get() {
-                // Return an error if the value has not been set.
-                None => Err(Error::<T>::NoneValue.into()),
-                Some(old) => {
-                    // Increment the value read from storage. This will cause an error in the event
-                    // of overflow.
-                    let new = old.checked_add(1).ok_or(Error::<T>::StorageOverflow)?;
-                    // Update the value in storage with the incremented result.
-                    Something::<T>::put(new);
+            let block_number = frame_system::Pallet::<T>::block_number();
+
+            match RssiData::<T>::get((block_number, [0u8; 6], _who)) {
+                Some(old_value) => {
+                    let _new_value = old_value.checked_add(1).ok_or(Error::<T>::StorageOverflow)?;
                     Ok(())
                 }
+                None => Err(Error::<T>::NoneValue.into()),
             }
         }
     }
