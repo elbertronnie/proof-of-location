@@ -1,13 +1,13 @@
 [package]
-name = "pallet-template"
-description = "FRAME pallet template for defining custom runtime logic."
-version = "0.1.0"
-license = "Unlicense"
 authors.workspace = true
-homepage.workspace = true
-repository.workspace = true
+description = "FRAME pallet template for defining custom runtime logic."
 edition.workspace = true
+homepage.workspace = true
+license = "Unlicense"
+name = "pallet-template"
 publish = false
+repository.workspace = true
+version = "0.1.0"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
@@ -17,10 +17,12 @@ codec = { features = ["derive"], workspace = true }
 frame-benchmarking = { optional = true, workspace = true }
 frame-support.workspace = true
 frame-system.workspace = true
+log = { version = "0.4.14", default-features = false }
 scale-info = { features = ["derive"], workspace = true }
-sp-std = { version = "14.0.0", default-features = false }
 sp-core.workspace = true
+sp-io.workspace = true
 sp-runtime.workspace = true
+sp-std = { version = "14.0.0", default-features = false }
 
 [dev-dependencies]
 sp-core = { default-features = true, workspace = true }
@@ -29,6 +31,12 @@ sp-runtime = { default-features = true, workspace = true }
 
 [features]
 default = ["std"]
+runtime-benchmarks = [
+	"frame-benchmarking/runtime-benchmarks",
+	"frame-support/runtime-benchmarks",
+	"frame-system/runtime-benchmarks",
+	"sp-runtime/runtime-benchmarks",
+]
 std = [
 	"codec/std",
 	"frame-benchmarking?/std",
@@ -36,12 +44,9 @@ std = [
 	"frame-system/std",
 	"scale-info/std",
 	"sp-std/std",
-]
-runtime-benchmarks = [
-	"frame-benchmarking/runtime-benchmarks",
-	"frame-support/runtime-benchmarks",
-	"frame-system/runtime-benchmarks",
-	"sp-runtime/runtime-benchmarks",
+	"sp-io/std",
+	"sp-runtime/std",
+	"log/std",
 ]
 try-runtime = [
 	"frame-support/try-runtime",

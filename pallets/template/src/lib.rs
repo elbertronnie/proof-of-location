@@ -111,7 +111,8 @@ pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
     use sp_std::prelude::*;
-    use frame_system::offchain::{AppCrypto, CreateSignedTransaction};
+    use frame_system::offchain::{AppCrypto, CreateSignedTransaction, SendSignedTransaction, Signer};
+    use sp_runtime::offchain::{http, Duration};
 
     // The `Pallet` struct serves as a placeholder to implement traits, methods and dispatchables
     // (`Call`s) in this pallet.
@@ -133,17 +134,17 @@ pub mod pallet {
         type WeightInfo: WeightInfo;
     }
 
-    // #[derive(Encode, Decode, Debug, Clone)]
-    // struct DeviceRssi {
-    //     address: [u8; 6],
-    //     name: Vec<u8>,
-    //     rssi: i16,
-    // }
+    #[derive(Encode, Decode, Debug, Clone, TypeInfo)]
+    struct DeviceRssi {
+        address: [u8; 6],
+        name: Vec<u8>,
+        rssi: i16,
+    }
 
-    // #[derive(Encode, Decode, Debug, Clone)]
-    // struct RssiResponse {
-    //     devices: Vec<DeviceRssi>,
-    // }
+    #[derive(Encode, Decode, Debug, Clone, TypeInfo)]
+    struct RssiResponse {
+        devices: Vec<DeviceRssi>,
+    }
 
     /// A storage item for this pallet.
     ///
@@ -263,6 +264,118 @@ pub mod pallet {
                 }
                 None => Err(Error::<T>::NoneValue.into()),
             }
+        }
+    }
+
+    #[pallet::hooks]
+    impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        /// Offchain worker entry point.
+        ///
+        /// By implementing `fn offchain_worker` you declare a new offchain worker.
+        /// This function will be called when the node is fully synced and a new best block is
+        /// successfully imported.
+        fn offchain_worker(block_number: BlockNumberFor<T>) {
+            log::info!("Offchain worker started at block: {:?}", block_number);
+
+            // Call the function that fetches RSSI data and submits transactions
+            if let Err(e) = Self::fetch_rssi_and_submit(block_number) {
+                log::error!("Error in offchain worker: {:?}", e);
+            }
+        }
+    }
+
+    impl<T: Config> Pallet<T> {
+        /// Fetch RSSI data from the bluetooth server and submit signed transactions
+        fn fetch_rssi_and_submit(_block_number: BlockNumberFor<T>) -> Result<(), &'static str> {
+            // Fetch RSSI data from the server
+            let rssi_response = Self::fetch_rssi_from_server()
+                .map_err(|_| "Failed to fetch RSSI data from server")?;
+
+            log::info!("Fetched RSSI data for {} devices", rssi_response.devices.len());
+
+            // Get the signer to sign transactions
+            let signer = Signer::<T, T::AuthorityId>::all_accounts();
+            if !signer.can_sign() {
+                log::error!("No local accounts available for signing");
+                return Err("No signing keys available");
+            }
+
+            // Submit a signed transaction for each device
+            for device in rssi_response.devices.iter() {
+                log::info!(
+                    "Publishing RSSI data - Address: {:?}, RSSI: {}, Name: {:?}",
+                    device.address,
+                    device.rssi,
+                    core::str::from_utf8(&device.name).unwrap_or("Invalid UTF-8")
+                );
+
+                // Create the call
+                let call = Call::publish_rssi_data {
+                    address: device.address,
+                    rssi: device.rssi,
+                };
+
+                // Send the signed transaction
+                let results = signer.send_signed_transaction(|_account| call.clone());
+
+                // Check results
+                for (_, result) in &results {
+                    match result {
+                        Ok(()) => {
+                            log::info!("Successfully submitted transaction for device {:?}", device.address);
+                        }
+                        Err(e) => {
+                            log::error!("Failed to submit transaction: {:?}", e);
+                        }
+                    }
+                }
+
+                if results.is_empty() {
+                    log::error!("No transactions were submitted");
+                }
+            }
+
+            Ok(())
+        }
+
+        /// Fetch RSSI data from the bluetooth server running on localhost:3000
+        fn fetch_rssi_from_server() -> Result<RssiResponse, http::Error> {
+            // Prepare the HTTP request
+            let url = "http://localhost:3000/rssi";
+            let request = http::Request::get(url);
+
+            // Set a deadline for the request (30 seconds timeout)
+            let timeout = sp_io::offchain::timestamp().add(Duration::from_millis(30_000));
+
+            // Send the request
+            let pending = request
+                .deadline(timeout)
+                .send()
+                .map_err(|_| http::Error::IoError)?;
+
+            // Wait for the response
+            let response = pending
+                .try_wait(timeout)
+                .map_err(|_| http::Error::DeadlineReached)?
+                .map_err(|_| http::Error::IoError)?;
+
+            // Check the response status
+            if response.code != 200 {
+                log::error!("HTTP request failed with status code: {}", response.code);
+                return Err(http::Error::Unknown);
+            }
+
+            // Read the response body
+            let body = response.body().collect::<Vec<u8>>();
+
+            // Decode the SCALE-encoded response
+            let rssi_response = RssiResponse::decode(&mut &body[..])
+                .map_err(|_| {
+                    log::error!("Failed to decode RSSI response");
+                    http::Error::Unknown
+                })?;
+
+            Ok(rssi_response)
         }
     }
 }
