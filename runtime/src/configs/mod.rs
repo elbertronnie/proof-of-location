@@ -162,4 +162,12 @@ impl pallet_template::Config for Runtime {
     type AuthorityId = pallet_template::crypto::TestAuthId;
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = pallet_template::weights::SubstrateWeight<Runtime>;
+    type ServerUrl = ServerUrl;
+    type ServerPort = ServerPort;
+}
+
+// Server configuration constants
+parameter_types! {
+    pub const ServerUrl: &'static [u8] = b"localhost";
+    pub const ServerPort: u16 = 3000;
 }

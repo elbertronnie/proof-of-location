@@ -39,6 +39,9 @@
 // We make sure this pallet uses `no_std` for compiling to Wasm.
 #![cfg_attr(not(feature = "std"), no_std)]
 
+// Import alloc for format! macro in no_std
+extern crate alloc;
+
 // Re-export pallet items so that they can be accessed from the crate namespace.
 pub use pallet::*;
 
@@ -133,6 +136,14 @@ pub mod pallet {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         /// A type representing the weights required by the dispatchables of this pallet.
         type WeightInfo: WeightInfo;
+        
+        /// Default server URL for fetching RSSI data (used if not set via set_server_config)
+        #[pallet::constant]
+        type ServerUrl: Get<&'static [u8]>;
+        
+        /// Default server port for fetching RSSI data (used if not set via set_server_config)
+        #[pallet::constant]
+        type ServerPort: Get<u16>;
     }
 
     #[derive(Encode, Decode, Debug, Clone, TypeInfo)]
@@ -247,6 +258,50 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Set the server configuration for this specific node's offchain worker.
+        /// This is stored in offchain local storage and is node-specific.
+        ///
+        /// This allows each node to connect to a different server without recompiling.
+        ///
+        /// ## Parameters
+        /// - `origin`: Must be root (sudo)
+        /// - `server_url`: The server URL (e.g., "localhost", "192.168.1.100")
+        /// - `server_port`: The server port (e.g., 3000, 8080)
+        #[pallet::call_index(1)]
+        #[pallet::weight(T::WeightInfo::cause_error())]
+        pub fn set_server_config(
+            origin: OriginFor<T>,
+            server_url: Vec<u8>,
+            server_port: u16,
+        ) -> DispatchResult {
+            // Only root/sudo can set this
+            ensure_root(origin)?;
+
+            // Store in offchain local storage (node-specific)
+            let url_key = b"pallet-template::server_url";
+            let port_key = b"pallet-template::server_port";
+
+            sp_io::offchain::local_storage_set(
+                sp_core::offchain::StorageKind::PERSISTENT,
+                url_key,
+                &server_url,
+            );
+
+            sp_io::offchain::local_storage_set(
+                sp_core::offchain::StorageKind::PERSISTENT,
+                port_key,
+                &server_port.to_le_bytes(),
+            );
+
+            log::info!(
+                "Server configuration updated: {}:{}",
+                core::str::from_utf8(&server_url).unwrap_or("Invalid UTF-8"),
+                server_port
+            );
+
+            Ok(())
+        }
+
         /// An example dispatchable that may throw a custom error.
         ///
         /// It checks that the caller is a signed origin and reads the current value from the
@@ -260,7 +315,7 @@ pub mod pallet {
         /// - If no value has been set ([`Error::NoneValue`])
         /// - If incrementing the value in storage causes an arithmetic overflow
         ///   ([`Error::StorageOverflow`])
-        #[pallet::call_index(1)]
+        #[pallet::call_index(2)]
         #[pallet::weight(T::WeightInfo::cause_error())]
         pub fn cause_error(origin: OriginFor<T>) -> DispatchResult {
             let _who = ensure_signed(origin)?;
@@ -356,11 +411,49 @@ pub mod pallet {
             Ok(())
         }
 
-        /// Fetch RSSI data from the bluetooth server running on localhost:3000
+        /// Fetch RSSI data from the bluetooth server
         fn fetch_rssi_from_server() -> Result<RssiResponse, http::Error> {
+            // Try to get node-specific configuration from offchain local storage
+            let url_key = b"pallet-template::server_url";
+            let port_key = b"pallet-template::server_port";
+
+            let server_url_bytes = sp_io::offchain::local_storage_get(
+                sp_core::offchain::StorageKind::PERSISTENT,
+                url_key,
+            );
+
+            let server_port_bytes = sp_io::offchain::local_storage_get(
+                sp_core::offchain::StorageKind::PERSISTENT,
+                port_key,
+            );
+
+            // Build the URL based on configuration
+            let url = match (server_url_bytes, server_port_bytes) {
+                (Some(url_bytes), Some(port_bytes)) => {
+                    let url_str = sp_std::str::from_utf8(&url_bytes)
+                        .map_err(|_| http::Error::Unknown)?;
+                    let port = u16::from_le_bytes([
+                        port_bytes.get(0).copied().unwrap_or(0),
+                        port_bytes.get(1).copied().unwrap_or(0),
+                    ]);
+                    log::info!("Using node-specific server config: {}:{}", url_str, port);
+                    alloc::format!("http://{}:{}/rssi", url_str, port)
+                }
+                _ => {
+                    // Fall back to default configuration
+                    let default_url = T::ServerUrl::get();
+                    let url_str = sp_std::str::from_utf8(default_url)
+                        .map_err(|_| http::Error::Unknown)?;
+                    let port = T::ServerPort::get();
+                    log::info!("Using default server config: {}:{}", url_str, port);
+                    alloc::format!("http://{}:{}/rssi", url_str, port)
+                }
+            };
+
+            log::info!("Fetching RSSI data from: {}", url);
+
             // Prepare the HTTP request
-            let url = "http://localhost:3000/rssi";
-            let request = http::Request::get(url);
+            let request = http::Request::get(&url);
 
             // Set a deadline for the request (30 seconds timeout)
             let timeout = sp_io::offchain::timestamp().add(Duration::from_millis(30_000));
