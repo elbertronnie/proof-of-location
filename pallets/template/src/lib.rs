@@ -62,7 +62,6 @@ pub use weights::*;
 
 use sp_core::crypto::KeyTypeId;
 
-
 /// Defines application identifier for crypto keys of this module.
 ///
 /// Every module that deals with signatures needs to declare its unique identifier for
@@ -76,31 +75,31 @@ pub const KEY_TYPE: KeyTypeId = KeyTypeId(*b"pof!");
 /// We can use from supported crypto kinds (`sr25519`, `ed25519` and `ecdsa`) and augment
 /// the types with this pallet-specific identifier.
 pub mod crypto {
-	use super::KEY_TYPE;
-	use sp_core::sr25519::Signature as Sr25519Signature;
-	use sp_runtime::{
-		app_crypto::{app_crypto, sr25519},
-		traits::Verify,
-		MultiSignature, MultiSigner,
-	};
-	app_crypto!(sr25519, KEY_TYPE);
+    use super::KEY_TYPE;
+    use sp_core::sr25519::Signature as Sr25519Signature;
+    use sp_runtime::{
+        app_crypto::{app_crypto, sr25519},
+        traits::Verify,
+        MultiSignature, MultiSigner,
+    };
+    app_crypto!(sr25519, KEY_TYPE);
 
-	pub struct TestAuthId;
+    pub struct TestAuthId;
 
-	impl frame_system::offchain::AppCrypto<MultiSigner, MultiSignature> for TestAuthId {
-		type RuntimeAppPublic = Public;
-		type GenericSignature = sp_core::sr25519::Signature;
-		type GenericPublic = sp_core::sr25519::Public;
-	}
+    impl frame_system::offchain::AppCrypto<MultiSigner, MultiSignature> for TestAuthId {
+        type RuntimeAppPublic = Public;
+        type GenericSignature = sp_core::sr25519::Signature;
+        type GenericPublic = sp_core::sr25519::Public;
+    }
 
-	// implemented for mock runtime in test
-	impl frame_system::offchain::AppCrypto<<Sr25519Signature as Verify>::Signer, Sr25519Signature>
-		for TestAuthId
-	{
-		type RuntimeAppPublic = Public;
-		type GenericSignature = sp_core::sr25519::Signature;
-		type GenericPublic = sp_core::sr25519::Public;
-	}
+    // implemented for mock runtime in test
+    impl frame_system::offchain::AppCrypto<<Sr25519Signature as Verify>::Signer, Sr25519Signature>
+        for TestAuthId
+    {
+        type RuntimeAppPublic = Public;
+        type GenericSignature = sp_core::sr25519::Signature;
+        type GenericPublic = sp_core::sr25519::Public;
+    }
 }
 
 // All pallet logic is defined in its own module and must be annotated by the `pallet` attribute.
@@ -109,10 +108,12 @@ pub mod pallet {
     // Import various useful types required by all FRAME pallets.
     use super::*;
     use frame_support::pallet_prelude::*;
+    use frame_system::offchain::{
+        AppCrypto, CreateSignedTransaction, SendSignedTransaction, Signer,
+    };
     use frame_system::pallet_prelude::*;
-    use sp_std::prelude::*;
-    use frame_system::offchain::{AppCrypto, CreateSignedTransaction, SendSignedTransaction, Signer};
     use sp_runtime::offchain::{http, Duration};
+    use sp_std::prelude::*;
 
     // The `Pallet` struct serves as a placeholder to implement traits, methods and dispatchables
     // (`Call`s) in this pallet.
@@ -127,7 +128,7 @@ pub mod pallet {
     #[pallet::config]
     pub trait Config: CreateSignedTransaction<Call<Self>> + frame_system::Config {
         /// The identifier type for an offchain worker.
-		type AuthorityId: AppCrypto<Self::Public, Self::Signature>;
+        type AuthorityId: AppCrypto<Self::Public, Self::Signature>;
         /// The overarching runtime event type.
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         /// A type representing the weights required by the dispatchables of this pallet.
@@ -153,12 +154,12 @@ pub mod pallet {
     #[pallet::storage]
     pub type RssiData<T: Config> = StorageNMap<
         Key = (
-			NMapKey<Identity, BlockNumberFor<T>>,
+            NMapKey<Identity, BlockNumberFor<T>>,
             NMapKey<Blake2_128Concat, [u8; 6]>,
-			NMapKey<Blake2_128Concat, T::AccountId>,
-		),
-		Value = i16,
-		QueryKind = OptionQuery,
+            NMapKey<Blake2_128Concat, T::AccountId>,
+        ),
+        Value = i16,
+        QueryKind = OptionQuery,
     >;
 
     /// Events that functions in this pallet can emit.
@@ -220,7 +221,11 @@ pub mod pallet {
         /// error if it isn't. Learn more about origins here: <https://docs.substrate.io/build/origins/>
         #[pallet::call_index(0)]
         #[pallet::weight(T::WeightInfo::do_something())]
-        pub fn publish_rssi_data(origin: OriginFor<T>, address: [u8; 6], rssi: i16) -> DispatchResult {
+        pub fn publish_rssi_data(
+            origin: OriginFor<T>,
+            address: [u8; 6],
+            rssi: i16,
+        ) -> DispatchResult {
             // Check that the extrinsic was signed and get the signer.
             let who = ensure_signed(origin)?;
 
@@ -231,7 +236,12 @@ pub mod pallet {
             RssiData::<T>::insert((block_number, address, who.clone()), rssi);
 
             // Emit an event.
-            Self::deposit_event(Event::RssiStored { block_number, address, who, rssi });
+            Self::deposit_event(Event::RssiStored {
+                block_number,
+                address,
+                who,
+                rssi,
+            });
 
             // Return a successful `DispatchResult`
             Ok(())
@@ -259,7 +269,9 @@ pub mod pallet {
 
             match RssiData::<T>::get((block_number, [0u8; 6], _who)) {
                 Some(old_value) => {
-                    let _new_value = old_value.checked_add(1).ok_or(Error::<T>::StorageOverflow)?;
+                    let _new_value = old_value
+                        .checked_add(1)
+                        .ok_or(Error::<T>::StorageOverflow)?;
                     Ok(())
                 }
                 None => Err(Error::<T>::NoneValue.into()),
@@ -291,7 +303,10 @@ pub mod pallet {
             let rssi_response = Self::fetch_rssi_from_server()
                 .map_err(|_| "Failed to fetch RSSI data from server")?;
 
-            log::info!("Fetched RSSI data for {} devices", rssi_response.devices.len());
+            log::info!(
+                "Fetched RSSI data for {} devices",
+                rssi_response.devices.len()
+            );
 
             // Get the signer to sign transactions
             let signer = Signer::<T, T::AuthorityId>::all_accounts();
@@ -322,7 +337,10 @@ pub mod pallet {
                 for (_, result) in &results {
                     match result {
                         Ok(()) => {
-                            log::info!("Successfully submitted transaction for device {:?}", device.address);
+                            log::info!(
+                                "Successfully submitted transaction for device {:?}",
+                                device.address
+                            );
                         }
                         Err(e) => {
                             log::error!("Failed to submit transaction: {:?}", e);
@@ -369,11 +387,10 @@ pub mod pallet {
             let body = response.body().collect::<Vec<u8>>();
 
             // Decode the SCALE-encoded response
-            let rssi_response = RssiResponse::decode(&mut &body[..])
-                .map_err(|_| {
-                    log::error!("Failed to decode RSSI response");
-                    http::Error::Unknown
-                })?;
+            let rssi_response = RssiResponse::decode(&mut &body[..]).map_err(|_| {
+                log::error!("Failed to decode RSSI response");
+                http::Error::Unknown
+            })?;
 
             Ok(rssi_response)
         }
