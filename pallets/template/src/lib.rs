@@ -158,6 +158,28 @@ pub mod pallet {
         devices: Vec<DeviceRssi>,
     }
 
+    // Using i64 to represent latitude/longitude with fixed-point precision
+    // Multiply actual coordinates by 1_000_000 to preserve 6 decimal places
+    #[derive(Encode, Decode, Debug, Clone, TypeInfo, MaxEncodedLen, PartialEq, Eq)]
+    #[scale_info(skip_type_params(T))]
+    pub struct LocationData {
+        pub address: [u8; 6],
+        pub latitude: i64,  // Latitude * 1_000_000
+        pub longitude: i64, // Longitude * 1_000_000
+    }
+
+    #[derive(Encode, Decode, Debug, Clone)]
+    struct Location {
+        latitude: f64,
+        longitude: f64,
+    }
+
+    #[derive(Encode, Decode, Debug, Clone)]
+    struct LocationResponse {
+        address: [u8; 6],
+        location: Location,
+    }
+
     /// A storage item for this pallet.
     ///
     /// In this template, we are declaring a storage item called `Something` that stores a single
@@ -170,7 +192,20 @@ pub mod pallet {
             NMapKey<Blake2_128Concat, T::AccountId>,
         ),
         Value = i16,
-        QueryKind = OptionQuery,
+    >;
+
+    #[pallet::storage]
+    pub type AddressRegistrationData<T: Config> = StorageMap<
+        Hasher = Blake2_128Concat,
+        Key = [u8; 6],
+        Value = T::AccountId,
+    >;
+
+    #[pallet::storage]
+    pub type AccountData<T: Config> = StorageMap<
+        Hasher = Blake2_128Concat,
+        Key = T::AccountId,
+        Value = LocationData,
     >;
 
     /// Events that functions in this pallet can emit.
@@ -253,6 +288,54 @@ pub mod pallet {
                 who,
                 rssi,
             });
+
+            // Return a successful `DispatchResult`
+            Ok(())
+        }
+
+        /// Publish location data to storage.
+        ///
+        /// This is called by the offchain worker to store location coordinates.
+        #[pallet::call_index(3)]
+        #[pallet::weight(T::WeightInfo::do_something())]
+        pub fn register_node(
+            origin: OriginFor<T>,
+            address: [u8; 6],
+            latitude: i64,
+            longitude: i64,
+        ) -> DispatchResult {
+            // Check that the extrinsic was signed and get the signer.
+            let who = ensure_signed(origin)?;
+
+            // Confirm if the bluetooth address is not already registered
+            assert!(
+                !AddressRegistrationData::<T>::contains_key(address),
+                "Node with this address is already registered"
+            );
+
+            // Confirm if the account is not already registered
+            assert!(
+                !AccountData::<T>::contains_key(&who),
+                "This account has already registered a node"
+            );
+
+            // Create location data
+            let location_data = LocationData {
+                address,
+                latitude,
+                longitude,
+            };
+
+            // Update storage.
+            AccountData::<T>::insert(who.clone(), location_data.clone());
+            AddressRegistrationData::<T>::insert(address, who.clone());
+
+            log::info!(
+                "Registered location for {:?}: lat={}, lon={}",
+                address,
+                latitude,
+                longitude
+            );
 
             // Return a successful `DispatchResult`
             Ok(())
@@ -354,32 +437,44 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         /// Fetch RSSI data from the bluetooth server and submit signed transactions
         fn fetch_rssi_and_submit(_block_number: BlockNumberFor<T>) -> Result<(), &'static str> {
-            // Fetch RSSI data from the server
-            let rssi_response = Self::fetch_rssi_from_server()
-                .map_err(|_| "Failed to fetch RSSI data from server")?;
-
-            log::info!(
-                "Fetched RSSI data for {} devices",
-                rssi_response.devices.len()
+            // Check if this node has already registered using offchain local storage
+            let registration_key = b"pallet-template::node_registered";
+            let is_registered = sp_io::offchain::local_storage_get(
+                sp_core::offchain::StorageKind::PERSISTENT,
+                registration_key,
             );
 
-            // Get the signer to sign transactions
+            // Get the signer
             let signer = Signer::<T, T::AuthorityId>::all_accounts();
             if !signer.can_sign() {
                 log::error!("No local accounts available for signing");
                 return Err("No signing keys available");
             }
 
+            // If the node is not registered, first register it
+            if is_registered.is_none() {
+                let location_response = Self::fetch_location_from_server()
+                    .map_err(|_| "Failed to fetch location data from server")?;
+
+                // Submit location data
+                Self::submit_location_data(location_response)?;
+                
+                // Mark as registered in local storage
+                sp_io::offchain::local_storage_set(
+                    sp_core::offchain::StorageKind::PERSISTENT,
+                    registration_key,
+                    b"true",
+                );
+                
+                log::info!("Node registration complete");
+            }
+
+            // Fetch RSSI data from the server
+            let rssi_response = Self::fetch_rssi_from_server()
+                .map_err(|_| "Failed to fetch RSSI data from server")?;
+
             // Submit a signed transaction for each device
             for device in rssi_response.devices.iter() {
-                log::info!(
-                    "Publishing RSSI data - Address: {:?}, RSSI: {}, Name: {:?}",
-                    device.address,
-                    device.rssi,
-                    core::str::from_utf8(&device.name).unwrap_or("Invalid UTF-8")
-                );
-
-                // Create the call
                 let call = Call::publish_rssi_data {
                     address: device.address,
                     rssi: device.rssi,
@@ -390,21 +485,9 @@ pub mod pallet {
 
                 // Check results
                 for (_, result) in &results {
-                    match result {
-                        Ok(()) => {
-                            log::info!(
-                                "Successfully submitted transaction for device {:?}",
-                                device.address
-                            );
-                        }
-                        Err(e) => {
-                            log::error!("Failed to submit transaction: {:?}", e);
-                        }
+                    if let Err(e) = result {
+                        log::error!("Failed to submit RSSI transaction: {:?}", e);
                     }
-                }
-
-                if results.is_empty() {
-                    log::error!("No transactions were submitted");
                 }
             }
 
@@ -486,6 +569,117 @@ pub mod pallet {
             })?;
 
             Ok(rssi_response)
+        }
+
+        /// Fetch location data from the server
+        fn fetch_location_from_server() -> Result<LocationResponse, http::Error> {
+            // Try to get node-specific configuration from offchain local storage
+            let url_key = b"pallet-template::server_url";
+            let port_key = b"pallet-template::server_port";
+
+            let server_url_bytes = sp_io::offchain::local_storage_get(
+                sp_core::offchain::StorageKind::PERSISTENT,
+                url_key,
+            );
+
+            let server_port_bytes = sp_io::offchain::local_storage_get(
+                sp_core::offchain::StorageKind::PERSISTENT,
+                port_key,
+            );
+
+            // Build the URL based on configuration
+            let url = match (server_url_bytes, server_port_bytes) {
+                (Some(url_bytes), Some(port_bytes)) => {
+                    let url_str = sp_std::str::from_utf8(&url_bytes)
+                        .map_err(|_| http::Error::Unknown)?;
+                    let port = u16::from_le_bytes([
+                        port_bytes.get(0).copied().unwrap_or(0),
+                        port_bytes.get(1).copied().unwrap_or(0),
+                    ]);
+                    log::info!("Using node-specific server config: {}:{}", url_str, port);
+                    alloc::format!("http://{}:{}/location", url_str, port)
+                }
+                _ => {
+                    // Fall back to default configuration
+                    let default_url = T::ServerUrl::get();
+                    let url_str = sp_std::str::from_utf8(default_url)
+                        .map_err(|_| http::Error::Unknown)?;
+                    let port = T::ServerPort::get();
+                    log::info!("Using default server config: {}:{}", url_str, port);
+                    alloc::format!("http://{}:{}/location", url_str, port)
+                }
+            };
+
+            log::info!("Fetching location data from: {}", url);
+
+            // Prepare the HTTP request
+            let request = http::Request::get(&url);
+
+            // Set a deadline for the request (30 seconds timeout)
+            let timeout = sp_io::offchain::timestamp().add(Duration::from_millis(30_000));
+
+            // Send the request
+            let pending = request
+                .deadline(timeout)
+                .send()
+                .map_err(|_| http::Error::IoError)?;
+
+            // Wait for the response
+            let response = pending
+                .try_wait(timeout)
+                .map_err(|_| http::Error::DeadlineReached)?
+                .map_err(|_| http::Error::IoError)?;
+
+            // Check the response status
+            if response.code != 200 {
+                log::error!("HTTP request failed with status code: {}", response.code);
+                return Err(http::Error::Unknown);
+            }
+
+            // Read the response body
+            let body = response.body().collect::<Vec<u8>>();
+
+            // Decode the SCALE-encoded response
+            let location_response = LocationResponse::decode(&mut &body[..]).map_err(|_| {
+                log::error!("Failed to decode location response");
+                http::Error::Unknown
+            })?;
+
+            Ok(location_response)
+        }
+
+        /// Submit location data as a signed transaction
+        fn submit_location_data(location_data: LocationResponse) -> Result<(), &'static str> {
+            // Convert f64 to i64 with fixed-point precision (multiply by 1_000_000)
+            let latitude_fixed = (location_data.location.latitude * 1_000_000.0) as i64;
+            let longitude_fixed = (location_data.location.longitude * 1_000_000.0) as i64;
+
+            // Create the call
+            let call = Call::register_node {
+                address: location_data.address,
+                latitude: latitude_fixed,
+                longitude: longitude_fixed,
+            };
+
+            // Get signer and send the transaction
+            let signer = Signer::<T, T::AuthorityId>::any_account();
+            let result = signer.send_signed_transaction(|_account| call.clone());
+
+            // Check result
+            match result {
+                Some((_, Ok(()))) => {
+                    log::info!("Successfully submitted location data transaction");
+                    Ok(())
+                }
+                Some((account, Err(e))) => {
+                    log::error!("Failed to submit location transaction: {:?}", e);
+                    Err("Transaction submission failed")
+                }
+                None => {
+                    log::error!("No signing account available");
+                    Err("No signing account available")
+                }
+            }
         }
     }
 }

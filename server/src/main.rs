@@ -26,7 +26,19 @@ struct RssiResponse {
     devices: Vec<DeviceRssi>,
 }
 
-fn get_bluetooth_addresses() -> HashSet<BDAddr> {
+#[derive(Encode, Decode, Debug, Clone)]
+struct Location {
+    latitude: f64,
+    longitude: f64,
+}
+
+#[derive(Encode, Decode, Debug, Clone)]
+struct LocationResponse {
+    address: [u8; 6],
+    location: Location,
+}
+
+fn get_neighbour_addresses() -> HashSet<BDAddr> {
     std::env::var("BLUETOOTH_ADDRESSES")
         .unwrap_or_default()
         .split(',')
@@ -34,6 +46,12 @@ fn get_bluetooth_addresses() -> HashSet<BDAddr> {
         .filter(|s| !s.is_empty())
         .map(|s| s.parse().unwrap())
         .collect()
+}
+
+fn get_bluetooth_address() -> BDAddr {
+    let addr_str = std::env::var("BLUETOOTH_ADDRESS")
+        .expect("BLUETOOTH_ADDRESS environment variable not set");
+    addr_str.parse().expect("Invalid BLUETOOTH_ADDRESS format")
 }
 
 fn calculate_median(values: &mut Vec<i16>) -> Option<i16> {
@@ -76,7 +94,7 @@ async fn perform_bluetooth_scan() -> Result<RssiResponse, Box<dyn Error>> {
     println!("Starting Bluetooth RSSI scan...");
 
     // Get the list of target Bluetooth addresses to monitor
-    let target_set = get_bluetooth_addresses();
+    let target_set = get_neighbour_addresses();
 
     if target_set.is_empty() {
         return Err(
@@ -173,6 +191,34 @@ async fn perform_bluetooth_scan() -> Result<RssiResponse, Box<dyn Error>> {
     Ok(RssiResponse { devices })
 }
 
+async fn get_location() -> impl IntoResponse {
+    // Get latitude and longitude from environment variables
+    let latitude = std::env::var("LATITUDE")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(0.0);
+    
+    let longitude = std::env::var("LONGITUDE")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(0.0);
+
+    let address = get_bluetooth_address();
+
+    let response = LocationResponse {
+        address: address.into_inner(),
+        location: Location { latitude, longitude },
+    };
+
+    // Encode the response using SCALE codec
+    let encoded = response.encode();
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .body(Body::from(encoded))
+        .unwrap()
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // Load environment variables from .env file
@@ -181,14 +227,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("Starting Bluetooth RSSI Scanner Server...\n");
 
     // Build the Axum router
-    let app = Router::new().route("/rssi", get(scan_rssi));
+    let app = Router::new()
+        .route("/rssi", get(scan_rssi))
+        .route("/location", get(get_location));
 
     // Get the server port from environment or use default
     let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());
     let addr = format!("0.0.0.0:{}", port);
 
     println!("Server listening on http://{}", addr);
-    println!("Access the RSSI endpoint at: http://{}/rssi\n", addr);
+    println!("Access the RSSI endpoint at: http://{}/rssi", addr);
+    println!("Access the Location endpoint at: http://{}/location\n", addr);
 
     // Start the server
     let listener = tokio::net::TcpListener::bind(&addr).await?;
