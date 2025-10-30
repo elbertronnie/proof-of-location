@@ -1,5 +1,6 @@
 use axum::{
     body::Body,
+    extract::Request,
     http::{header, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
@@ -49,8 +50,8 @@ fn get_neighbour_addresses() -> HashSet<BDAddr> {
 }
 
 fn get_bluetooth_address() -> BDAddr {
-    let addr_str = std::env::var("BLUETOOTH_ADDRESS")
-        .expect("BLUETOOTH_ADDRESS environment variable not set");
+    let addr_str =
+        std::env::var("BLUETOOTH_ADDRESS").expect("BLUETOOTH_ADDRESS environment variable not set");
     addr_str.parse().expect("Invalid BLUETOOTH_ADDRESS format")
 }
 
@@ -69,7 +70,16 @@ fn calculate_median(values: &mut Vec<i16>) -> Option<i16> {
     }
 }
 
-async fn scan_rssi() -> impl IntoResponse {
+async fn scan_rssi(req: Request) -> impl IntoResponse {
+    // Extract and log the Node ID from the X-Node-ID header
+    let node_id = req
+        .headers()
+        .get("X-Node-ID")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown");
+
+    println!("📡 RSSI request from node: {}", node_id);
+
     match perform_bluetooth_scan().await {
         Ok(response) => {
             // Encode the response using SCALE codec
@@ -191,13 +201,22 @@ async fn perform_bluetooth_scan() -> Result<RssiResponse, Box<dyn Error>> {
     Ok(RssiResponse { devices })
 }
 
-async fn get_location() -> impl IntoResponse {
+async fn get_location(req: Request) -> impl IntoResponse {
+    // Extract and log the Node ID from the X-Node-ID header
+    let node_id = req
+        .headers()
+        .get("X-Node-ID")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown");
+
+    println!("📍 Location request from node: {}", node_id);
+
     // Get latitude and longitude from environment variables
     let latitude = std::env::var("LATITUDE")
         .ok()
         .and_then(|s| s.parse::<f64>().ok())
         .unwrap_or(0.0);
-    
+
     let longitude = std::env::var("LONGITUDE")
         .ok()
         .and_then(|s| s.parse::<f64>().ok())
@@ -207,7 +226,10 @@ async fn get_location() -> impl IntoResponse {
 
     let response = LocationResponse {
         address: address.into_inner(),
-        location: Location { latitude, longitude },
+        location: Location {
+            latitude,
+            longitude,
+        },
     };
 
     // Encode the response using SCALE codec
@@ -237,7 +259,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Server listening on http://{}", addr);
     println!("Access the RSSI endpoint at: http://{}/rssi", addr);
-    println!("Access the Location endpoint at: http://{}/location\n", addr);
+    println!(
+        "Access the Location endpoint at: http://{}/location\n",
+        addr
+    );
 
     // Start the server
     let listener = tokio::net::TcpListener::bind(&addr).await?;

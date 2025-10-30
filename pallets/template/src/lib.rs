@@ -110,6 +110,7 @@ pub mod crypto {
 pub mod pallet {
     // Import various useful types required by all FRAME pallets.
     use super::*;
+    use alloc::string::String;
     use frame_support::pallet_prelude::*;
     use frame_system::offchain::{
         AppCrypto, CreateSignedTransaction, SendSignedTransaction, Signer,
@@ -136,11 +137,11 @@ pub mod pallet {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         /// A type representing the weights required by the dispatchables of this pallet.
         type WeightInfo: WeightInfo;
-        
+
         /// Default server URL for fetching RSSI data (used if not set via set_server_config)
         #[pallet::constant]
         type ServerUrl: Get<&'static [u8]>;
-        
+
         /// Default server port for fetching RSSI data (used if not set via set_server_config)
         #[pallet::constant]
         type ServerPort: Get<u16>;
@@ -195,18 +196,12 @@ pub mod pallet {
     >;
 
     #[pallet::storage]
-    pub type AddressRegistrationData<T: Config> = StorageMap<
-        Hasher = Blake2_128Concat,
-        Key = [u8; 6],
-        Value = T::AccountId,
-    >;
+    pub type AddressRegistrationData<T: Config> =
+        StorageMap<Hasher = Blake2_128Concat, Key = [u8; 6], Value = T::AccountId>;
 
     #[pallet::storage]
-    pub type AccountData<T: Config> = StorageMap<
-        Hasher = Blake2_128Concat,
-        Key = T::AccountId,
-        Value = LocationData,
-    >;
+    pub type AccountData<T: Config> =
+        StorageMap<Hasher = Blake2_128Concat, Key = T::AccountId, Value = LocationData>;
 
     /// Events that functions in this pallet can emit.
     ///
@@ -435,6 +430,45 @@ pub mod pallet {
     }
 
     impl<T: Config> Pallet<T> {
+        /// Get the node identifier (account ID) as a hex string
+        /// This retrieves the public key from the keystore
+        fn get_node_identifier() -> Result<String, &'static str> {
+            // Get the public keys from the keystore using the KEY_TYPE
+            let keys = sp_io::crypto::sr25519_public_keys(crate::KEY_TYPE);
+
+            if let Some(key) = keys.first() {
+                // Convert the public key to hex string
+                let key_bytes: &[u8] = key.as_ref();
+                let hex_string = Self::bytes_to_hex(key_bytes);
+                Ok(hex_string)
+            } else {
+                log::warn!("No signing keys available, using default node identifier");
+                Ok(alloc::format!("node-unknown"))
+            }
+        }
+
+        /// Helper function to convert bytes to hex string
+        fn bytes_to_hex(bytes: &[u8]) -> String {
+            let hex_chars: Vec<u8> = bytes
+                .iter()
+                .flat_map(|b| {
+                    let high = (b >> 4) & 0x0f;
+                    let low = b & 0x0f;
+                    [Self::hex_char(high), Self::hex_char(low)]
+                })
+                .collect();
+            alloc::format!("0x{}", String::from_utf8_lossy(&hex_chars))
+        }
+
+        /// Convert a nibble (4 bits) to its hex character
+        fn hex_char(nibble: u8) -> u8 {
+            match nibble {
+                0..=9 => b'0' + nibble,
+                10..=15 => b'a' + (nibble - 10),
+                _ => b'?',
+            }
+        }
+
         /// Fetch RSSI data from the bluetooth server and submit signed transactions
         fn fetch_rssi_and_submit(_block_number: BlockNumberFor<T>) -> Result<(), &'static str> {
             // Check if this node has already registered using offchain local storage
@@ -458,14 +492,14 @@ pub mod pallet {
 
                 // Submit location data
                 Self::submit_location_data(location_response)?;
-                
+
                 // Mark as registered in local storage
                 sp_io::offchain::local_storage_set(
                     sp_core::offchain::StorageKind::PERSISTENT,
                     registration_key,
                     b"true",
                 );
-                
+
                 log::info!("Node registration complete");
             }
 
@@ -513,8 +547,8 @@ pub mod pallet {
             // Build the URL based on configuration
             let url = match (server_url_bytes, server_port_bytes) {
                 (Some(url_bytes), Some(port_bytes)) => {
-                    let url_str = sp_std::str::from_utf8(&url_bytes)
-                        .map_err(|_| http::Error::Unknown)?;
+                    let url_str =
+                        sp_std::str::from_utf8(&url_bytes).map_err(|_| http::Error::Unknown)?;
                     let port = u16::from_le_bytes([
                         port_bytes.get(0).copied().unwrap_or(0),
                         port_bytes.get(1).copied().unwrap_or(0),
@@ -525,8 +559,8 @@ pub mod pallet {
                 _ => {
                     // Fall back to default configuration
                     let default_url = T::ServerUrl::get();
-                    let url_str = sp_std::str::from_utf8(default_url)
-                        .map_err(|_| http::Error::Unknown)?;
+                    let url_str =
+                        sp_std::str::from_utf8(default_url).map_err(|_| http::Error::Unknown)?;
                     let port = T::ServerPort::get();
                     log::info!("Using default server config: {}:{}", url_str, port);
                     alloc::format!("http://{}:{}/rssi", url_str, port)
@@ -535,8 +569,14 @@ pub mod pallet {
 
             log::info!("Fetching RSSI data from: {}", url);
 
-            // Prepare the HTTP request
+            // Get node identifier for the header
+            let node_id = Self::get_node_identifier().map_err(|_| http::Error::Unknown)?;
+
+            log::info!("Request from node: {}", node_id);
+
+            // Prepare the HTTP request with custom header
             let request = http::Request::get(&url);
+            let request = request.add_header("X-Node-ID", &node_id);
 
             // Set a deadline for the request (30 seconds timeout)
             let timeout = sp_io::offchain::timestamp().add(Duration::from_millis(30_000));
@@ -590,8 +630,8 @@ pub mod pallet {
             // Build the URL based on configuration
             let url = match (server_url_bytes, server_port_bytes) {
                 (Some(url_bytes), Some(port_bytes)) => {
-                    let url_str = sp_std::str::from_utf8(&url_bytes)
-                        .map_err(|_| http::Error::Unknown)?;
+                    let url_str =
+                        sp_std::str::from_utf8(&url_bytes).map_err(|_| http::Error::Unknown)?;
                     let port = u16::from_le_bytes([
                         port_bytes.get(0).copied().unwrap_or(0),
                         port_bytes.get(1).copied().unwrap_or(0),
@@ -602,8 +642,8 @@ pub mod pallet {
                 _ => {
                     // Fall back to default configuration
                     let default_url = T::ServerUrl::get();
-                    let url_str = sp_std::str::from_utf8(default_url)
-                        .map_err(|_| http::Error::Unknown)?;
+                    let url_str =
+                        sp_std::str::from_utf8(default_url).map_err(|_| http::Error::Unknown)?;
                     let port = T::ServerPort::get();
                     log::info!("Using default server config: {}:{}", url_str, port);
                     alloc::format!("http://{}:{}/location", url_str, port)
@@ -612,8 +652,14 @@ pub mod pallet {
 
             log::info!("Fetching location data from: {}", url);
 
-            // Prepare the HTTP request
+            // Get node identifier for the header
+            let node_id = Self::get_node_identifier().map_err(|_| http::Error::Unknown)?;
+
+            log::info!("Request from node: {}", node_id);
+
+            // Prepare the HTTP request with custom header
             let request = http::Request::get(&url);
+            let request = request.add_header("X-Node-ID", &node_id);
 
             // Set a deadline for the request (30 seconds timeout)
             let timeout = sp_io::offchain::timestamp().add(Duration::from_millis(30_000));
@@ -671,7 +717,7 @@ pub mod pallet {
                     log::info!("Successfully submitted location data transaction");
                     Ok(())
                 }
-                Some((account, Err(e))) => {
+                Some((_account, Err(e))) => {
                     log::error!("Failed to submit location transaction: {:?}", e);
                     Err("Transaction submission failed")
                 }
