@@ -1,0 +1,14 @@
+[package]
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+name = "simulator"
+repository.workspace = true
+version = "0.1.0"
+
+[dependencies]
+axum = "0.7"
+codec = { workspace = true, features = ["derive"] }
+haversine-rs = "0.3.0"
+tokio = { version = "1.0", features = ["full"] }

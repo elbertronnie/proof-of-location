@@ -3626,6 +3626,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "haversine-rs"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a938f96298bab2f2315301ac84f6574c1f29a84d95956944cb4d380e6c0ff71e"
+
+[[package]]
 name = "heck"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9533,6 +9539,16 @@ name = "simple-mermaid"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "620a1d43d70e142b1d46a929af51d44f383db9c7a2ec122de2cd992ccfcf3c18"
+
+[[package]]
+name = "simulator"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "haversine-rs",
+ "parity-scale-codec",
+ "tokio",
+]
 
 [[package]]
 name = "siphasher"

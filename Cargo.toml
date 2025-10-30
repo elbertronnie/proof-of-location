@@ -6,7 +6,7 @@ license = "MIT-0"
 repository = "https://github.com/paritytech/polkadot-sdk-solochain-template.git"
 
 [workspace]
-members = ["node", "pallets/template", "runtime", "server"]
+members = ["node", "pallets/template", "runtime", "server", "simulator"]
 resolver = "2"
 
 [workspace.dependencies]
