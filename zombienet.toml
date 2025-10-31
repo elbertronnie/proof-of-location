@@ -4,17 +4,14 @@ timeout = 1000
 [relaychain]
 chain = "local"
 default_command = "./target/release/solochain-template-node"
+default_keystore_key_types = ["gran", "aura", "loc!"]
 
 [[relaychain.nodes]]
-args = ["--alice"]
-keystore_key_types = ["pof!_sr"]
 name = "alice"
 rpc_port = 9944
 validator = true
 
 [[relaychain.nodes]]
-args = ["--bob"]
-keystore_key_types = ["pof!_sr"]
 name = "bob"
 rpc_port = 9945
 validator = true
