@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Location Simulator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        .content {
+            display: flex;
+            gap: 30px;
+        }
+
+        .controls {
+            flex: 0 0 320px;
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 8px;
+        }
+
+        .controls h2 {
+            margin-bottom: 20px;
+            font-size: 20px;
+            color: #333;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #e74c3c;
+        }
+
+        .node-list {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 2px solid #ddd;
+        }
+
+        .node-list h3 {
+            margin-bottom: 15px;
+            font-size: 16px;
+            color: #333;
+        }
+
+        .node-item {
+            padding: 8px;
+            margin-bottom: 8px;
+            background: white;
+            border-radius: 4px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .node-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        }
+
+        .map-container {
+            flex: 1;
+            position: relative;
+        }
+
+        .map {
+            width: 100%;
+            height: 700px;
+            background: linear-gradient(to bottom, #e8f5e9 0%, #fff9c4 100%);
+            border: 3px solid #333;
+            border-radius: 8px;
+            position: relative;
+            cursor: crosshair;
+            overflow: hidden;
+        }
+
+        .node {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            transition: all 0.1s ease;
+        }
+
+        .node.draggable {
+            cursor: move;
+        }
+
+        .node.draggable:hover .node-dot {
+            transform: scale(1.2);
+        }
+
+        .node-dot {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s;
+        }
+
+        .node-label {
+            position: absolute;
+            top: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            font-weight: bold;
+            font-size: 14px;
+            background: white;
+            padding: 4px 10px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            pointer-events: none;
+        }
+
+        .grid-lines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .grid-line {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.05);
+        }
+
+        .grid-line.horizontal {
+            width: 100%;
+            height: 1px;
+        }
+
+        .grid-line.vertical {
+            height: 100%;
+            width: 1px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🌍 Location Simulator</h1>
+        <p class="subtitle">Interactive map for adjusting node positions - Drag Alice to move her position</p>
+
+        <div class="content">
+            <div class="controls">
+                <h2>Alice's Position</h2>
+                <div class="input-group">
+                    <label>Latitude</label>
+                    <input type="number" id="lat-input" step="0.00001" />
+                </div>
+                <div class="input-group">
+                    <label>Longitude</label>
+                    <input type="number" id="lon-input" step="0.00001" />
+                </div>
+
+                <div class="node-list">
+                    <h3>All Nodes</h3>
+                    <div id="node-list"></div>
+                </div>
+            </div>
+
+            <div class="map-container">
+                <div class="map" id="map">
+                    <div class="grid-lines" id="grid"></div>
+                    <div id="nodes"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const latInput = document.getElementById('lat-input');
+        const lonInput = document.getElementById('lon-input');
+        const map = document.getElementById('map');
+        const nodesContainer = document.getElementById('nodes');
+        const nodeListContainer = document.getElementById('node-list');
+
+        let nodes = [];
+        let isDragging = false;
+        let mapRect = null;
+
+        // Draw grid
+        const grid = document.getElementById('grid');
+        for (let i = 0; i <= 10; i++) {
+            const hLine = document.createElement('div');
+            hLine.className = 'grid-line horizontal';
+            hLine.style.top = `${i * 10}%`;
+            grid.appendChild(hLine);
+
+            const vLine = document.createElement('div');
+            vLine.className = 'grid-line vertical';
+            vLine.style.left = `${i * 10}%`;
+            grid.appendChild(vLine);
+        }
+
+        function latLonToPixel(lat, lon) {
+            const bounds = { minLat: -0.0002, maxLat: 0.0002, minLon: -0.0002, maxLon: 0.0002 };
+            const rect = map.getBoundingClientRect();
+            const x = ((lon - bounds.minLon) / (bounds.maxLon - bounds.minLon)) * rect.width;
+            const y = ((bounds.maxLat - lat) / (bounds.maxLat - bounds.minLat)) * rect.height;
+            return { x, y };
+        }
+
+        function pixelToLatLon(x, y) {
+            const bounds = { minLat: -0.0002, maxLat: 0.0002, minLon: -0.0002, maxLon: 0.0002 };
+            const rect = map.getBoundingClientRect();
+            const lat = bounds.maxLat - (y / rect.height) * (bounds.maxLat - bounds.minLat);
+            const lon = bounds.minLon + (x / rect.width) * (bounds.maxLon - bounds.minLon);
+            return { lat, lon };
+        }
+
+        function renderNodes() {
+            nodesContainer.innerHTML = '';
+            nodeListContainer.innerHTML = '';
+
+            nodes.forEach(node => {
+                const { x, y } = latLonToPixel(node.latitude, node.longitude);
+
+                const nodeEl = document.createElement('div');
+                nodeEl.className = 'node' + (node.name === 'Alice' ? ' draggable' : '');
+                nodeEl.style.left = `${x}px`;
+                nodeEl.style.top = `${y}px`;
+
+                const dot = document.createElement('div');
+                dot.className = 'node-dot';
+                dot.style.background = node.color;
+
+                const label = document.createElement('div');
+                label.className = 'node-label';
+                label.textContent = node.name;
+
+                nodeEl.appendChild(dot);
+                nodeEl.appendChild(label);
+                nodesContainer.appendChild(nodeEl);
+
+                // Node list
+                const listItem = document.createElement('div');
+                listItem.className = 'node-item';
+                const colorDot = document.createElement('div');
+                colorDot.className = 'node-color';
+                colorDot.style.background = node.color;
+                listItem.appendChild(colorDot);
+                listItem.appendChild(document.createTextNode(`${node.name}: (${node.latitude.toFixed(6)}, ${node.longitude.toFixed(6)})`));
+                nodeListContainer.appendChild(listItem);
+            });
+        }
+
+        async function loadPositions() {
+            try {
+                const response = await fetch('/api/positions');
+                nodes = await response.json();
+                const alice = nodes.find(n => n.name === 'Alice');
+                if (alice) {
+                    latInput.value = alice.latitude;
+                    lonInput.value = alice.longitude;
+                }
+                renderNodes();
+            } catch (e) {
+                console.error('Failed to load positions:', e);
+            }
+        }
+
+        async function updateAlice(lat, lon) {
+            try {
+                await fetch('/api/update-alice', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ latitude: lat, longitude: lon })
+                });
+                const alice = nodes.find(n => n.name === 'Alice');
+                if (alice) {
+                    alice.latitude = lat;
+                    alice.longitude = lon;
+                }
+                renderNodes();
+            } catch (e) {
+                console.error('Failed to update Alice:', e);
+            }
+        }
+
+        latInput.addEventListener('input', (e) => {
+            const lat = parseFloat(e.target.value);
+            const lon = parseFloat(lonInput.value);
+            if (!isNaN(lat) && !isNaN(lon)) {
+                updateAlice(lat, lon);
+            }
+        });
+
+        lonInput.addEventListener('input', (e) => {
+            const lat = parseFloat(latInput.value);
+            const lon = parseFloat(e.target.value);
+            if (!isNaN(lat) && !isNaN(lon)) {
+                updateAlice(lat, lon);
+            }
+        });
+
+        map.addEventListener('mousedown', (e) => {
+            const rect = map.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            // Check if clicking on Alice
+            const alice = nodes.find(n => n.name === 'Alice');
+            if (alice) {
+                const alicePos = latLonToPixel(alice.latitude, alice.longitude);
+                const distance = Math.sqrt((x - alicePos.x) ** 2 + (y - alicePos.y) ** 2);
+                if (distance < 20) {
+                    isDragging = true;
+                    mapRect = rect;
+                }
+            }
+        });
+
+        map.addEventListener('mousemove', (e) => {
+            if (isDragging && mapRect) {
+                const x = e.clientX - mapRect.left;
+                const y = e.clientY - mapRect.top;
+                const { lat, lon } = pixelToLatLon(x, y);
+
+                latInput.value = lat.toFixed(6);
+                lonInput.value = lon.toFixed(6);
+                updateAlice(lat, lon);
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            mapRect = null;
+        });
+
+        map.addEventListener('click', (e) => {
+            if (!isDragging) {
+                const rect = map.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const { lat, lon } = pixelToLatLon(x, y);
+
+                latInput.value = lat.toFixed(6);
+                lonInput.value = lon.toFixed(6);
+                updateAlice(lat, lon);
+            }
+        });
+
+        // Initial load
+        loadPositions();
+    </script>
+</body>
+
+</html>
