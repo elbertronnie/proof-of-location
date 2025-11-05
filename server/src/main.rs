@@ -31,7 +31,6 @@ struct LocationResponse {
 struct AppState {
     adapter: bluer::Adapter,
     rssi_data: bluetooth::RssiData,
-    device_names: bluetooth::DeviceNames,
 }
 
 async fn scan_rssi(State(state): State<AppState>, req: Request) -> impl IntoResponse {
@@ -44,7 +43,7 @@ async fn scan_rssi(State(state): State<AppState>, req: Request) -> impl IntoResp
 
     println!("📡 RSSI request from node: {}", node_id);
 
-    match bluetooth::get_current_rssi(state.rssi_data, state.device_names).await {
+    match bluetooth::get_current_rssi(state.rssi_data).await {
         Ok(response) => {
             // Encode the response using SCALE codec
             let encoded = response.encode();
@@ -112,30 +111,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("Starting Bluetooth RSSI Scanner Server...\n");
 
     // Create Bluetooth session
-    let session = bluer::Session::new().await.expect("Failed to create Bluetooth session");
-    let adapter = session.default_adapter().await.expect("Failed to get default adapter");
+    let session = bluer::Session::new()
+        .await
+        .expect("Failed to create Bluetooth session");
+    let adapter = session
+        .default_adapter()
+        .await
+        .expect("Failed to get default adapter");
 
     // Create shared state for RSSI data
     let rssi_data: bluetooth::RssiData = Arc::new(Mutex::new(HashMap::new()));
-    let device_names: bluetooth::DeviceNames = Arc::new(Mutex::new(HashMap::new()));
 
     // Spawn background task for continuous Bluetooth scanning
     let adapter_clone = adapter.clone();
     let rssi_data_clone = Arc::clone(&rssi_data);
-    let device_names_clone = Arc::clone(&device_names);
     tokio::spawn(async move {
-        if let Err(e) = bluetooth::start_continuous_scan(adapter_clone, rssi_data_clone, device_names_clone).await
-        {
+        if let Err(e) = bluetooth::start_continuous_scan(adapter_clone, rssi_data_clone).await {
             eprintln!("Bluetooth scan error: {}", e);
         }
     });
 
     // Create app state
-    let app_state = AppState {
-        adapter,
-        rssi_data,
-        device_names,
-    };
+    let app_state = AppState { adapter, rssi_data };
 
     // Build the Axum router
     let app = Router::new()

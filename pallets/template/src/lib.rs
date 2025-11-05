@@ -150,7 +150,6 @@ pub mod pallet {
     #[derive(Encode, Decode, Debug, Clone, TypeInfo)]
     struct DeviceRssi {
         address: [u8; 6],
-        name: Vec<u8>,
         rssi: i16,
     }
 

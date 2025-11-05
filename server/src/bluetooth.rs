@@ -16,7 +16,6 @@ const BLUETOOTH_SERVICE_UUID: &str = "0000b4e7-0000-1000-8000-00805f9b34fb";
 #[derive(Encode, Decode, Debug, Clone)]
 pub struct DeviceRssi {
     pub address: [u8; 6],
-    pub name: Vec<u8>,
     pub rssi: i16,
 }
 
@@ -36,7 +35,10 @@ pub fn get_neighbour_addresses() -> HashSet<Address> {
 }
 
 pub async fn get_bluetooth_address(adapter: &bluer::Adapter) -> Address {
-    adapter.address().await.expect("Failed to get adapter address")
+    adapter
+        .address()
+        .await
+        .expect("Failed to get adapter address")
 }
 
 fn calculate_median(values: &mut Vec<i16>) -> Option<i16> {
@@ -56,9 +58,8 @@ fn calculate_median(values: &mut Vec<i16>) -> Option<i16> {
 
 // Global shared state for RSSI data
 pub type RssiData = Arc<Mutex<HashMap<Address, VecDeque<i16>>>>;
-pub type DeviceNames = Arc<Mutex<HashMap<Address, String>>>;
 
-async fn start_advertising(adapter: &bluer::Adapter) -> Result<(), Box<dyn Error>> {    
+async fn start_advertising(adapter: &bluer::Adapter) -> Result<(), Box<dyn Error>> {
     println!("Starting BLE advertising...");
 
     let advertisement = Advertisement {
@@ -74,7 +75,10 @@ async fn start_advertising(adapter: &bluer::Adapter) -> Result<(), Box<dyn Error
     };
 
     let _handle = adapter.advertise(advertisement).await?;
-    println!("BLE advertising started with service UUID: {}", BLUETOOTH_SERVICE_UUID);
+    println!(
+        "BLE advertising started with service UUID: {}",
+        BLUETOOTH_SERVICE_UUID
+    );
 
     // Keep advertising running indefinitely
     loop {
@@ -82,11 +86,7 @@ async fn start_advertising(adapter: &bluer::Adapter) -> Result<(), Box<dyn Error
     }
 }
 
-async fn scan_devices(
-    adapter: &bluer::Adapter,
-    rssi_data: RssiData,
-    device_names: DeviceNames,
-) -> Result<(), Box<dyn Error>> {
+async fn scan_devices(adapter: &bluer::Adapter, rssi_data: RssiData) -> Result<(), Box<dyn Error>> {
     println!("Starting device scanning...");
 
     // Get the list of target Bluetooth addresses to monitor
@@ -144,14 +144,8 @@ async fn scan_devices(
 
                         let device = adapter.device(addr)?;
 
-                        // Get initial device name
-                        if let Ok(Some(name)) = device.name().await {
-                            device_names.lock().await.insert(addr, name);
-                        }
-
                         // Spawn a task to listen for RSSI changes on this device
                         let rssi_data_clone = Arc::clone(&rssi_data);
-                        let device_names_clone = Arc::clone(&device_names);
 
                         let rssi = device.rssi().await?.unwrap_or(0);
                         println!("Device added: {} (RSSI: {})", addr, rssi);
@@ -186,11 +180,6 @@ async fn scan_devices(
 
                                             println!("RSSI update for {}: {}", addr, rssi);
                                         }
-                                        DeviceEvent::PropertyChanged(DeviceProperty::Name(name)) => {
-                                            // Name changed/became available
-                                            println!("Name update for {}: {}", addr, name);
-                                            device_names_clone.lock().await.insert(addr, name);
-                                        }
                                         _ => {}
                                     }
                                 }
@@ -206,9 +195,8 @@ async fn scan_devices(
                             println!("Device removed, task aborted: {}", addr);
                         }
 
-                        // Also remove RSSI data and name
+                        // Also remove RSSI data
                         rssi_data.lock().await.remove(&addr);
-                        device_names.lock().await.remove(&addr);
                     }
                     _ => {}
                 }
@@ -223,12 +211,15 @@ async fn scan_devices(
 pub async fn start_continuous_scan(
     adapter: bluer::Adapter,
     rssi_data: RssiData,
-    device_names: DeviceNames,
 ) -> Result<(), Box<dyn Error>> {
     println!("Starting continuous Bluetooth operations...");
 
     // Get the Bluetooth adapter
-    println!("Using adapter: {} ({})", adapter.address().await?, adapter.name());
+    println!(
+        "Using adapter: {} ({})",
+        adapter.address().await?,
+        adapter.name()
+    );
 
     // Power on the adapter if it's not already.
     adapter.set_powered(true).await?;
@@ -250,17 +241,13 @@ pub async fn start_continuous_scan(
     });
 
     // Run device scanning (this blocks indefinitely)
-    scan_devices(&adapter, rssi_data, device_names).await
+    scan_devices(&adapter, rssi_data).await
 }
 
-pub async fn get_current_rssi(
-    rssi_data: RssiData,
-    device_names: DeviceNames,
-) -> Result<RssiResponse, Box<dyn Error>> {
+pub async fn get_current_rssi(rssi_data: RssiData) -> Result<RssiResponse, Box<dyn Error>> {
     println!("Calculating median RSSI from current data...");
 
     let rssi_data_snapshot = rssi_data.lock().await.clone();
-    let device_names_snapshot = device_names.lock().await.clone();
 
     // Build response with median RSSI values
     let mut devices = Vec::new();
@@ -268,13 +255,8 @@ pub async fn get_current_rssi(
         if !rssi_deque.is_empty() {
             let mut rssi_values: Vec<i16> = rssi_deque.into_iter().collect();
             if let Some(median_rssi) = calculate_median(&mut rssi_values) {
-                let name = device_names_snapshot
-                    .get(&address)
-                    .cloned()
-                    .unwrap_or_else(|| "Unknown".to_string());
                 devices.push(DeviceRssi {
                     address: address.0,
-                    name: name.into_bytes(),
                     rssi: median_rssi,
                 });
             }

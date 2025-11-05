@@ -47,7 +47,6 @@ type SharedState = Arc<RwLock<AlicePosition>>;
 #[derive(Encode, Decode, Debug, Clone)]
 struct DeviceRssi {
     address: [u8; 6],
-    name: Vec<u8>,
     rssi: i16,
 }
 #[derive(Encode, Decode, Debug, Clone)]
@@ -201,11 +200,7 @@ async fn scan_rssi(State(state): State<SharedState>, req: Request) -> impl IntoR
             }
         };
         let rssi = estimate_rssi(requester_lat, requester_lon, other_lat, other_lon);
-        devices.push(DeviceRssi {
-            address,
-            name: name.clone().into_bytes(),
-            rssi,
-        });
+        devices.push(DeviceRssi { address, rssi });
         println!("  {} ({}): RSSI = {} dBm", name, bluetooth_addr_str, rssi);
     }
     println!("Returning RSSI data for {} devices\n", devices.len());
