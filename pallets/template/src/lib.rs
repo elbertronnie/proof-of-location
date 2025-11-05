@@ -222,6 +222,13 @@ pub mod pallet {
             who: T::AccountId,
             rssi: i16,
         },
+        /// A node has successfully registered its location.
+        NodeRegistered {
+            address: [u8; 6],
+            who: T::AccountId,
+            latitude: i64,
+            longitude: i64,
+        },
     }
 
     /// Errors that can be returned by this pallet.
@@ -234,10 +241,10 @@ pub mod pallet {
     /// information.
     #[pallet::error]
     pub enum Error<T> {
-        /// The value retrieved was `None` as no value was previously set.
-        NoneValue,
-        /// There was an attempt to increment the value in storage over `u32::MAX`.
-        StorageOverflow,
+        /// Bluetooth Address is already taken
+        BluetoothAddressAlreadyTaken,
+        /// Account has already registered a node
+        AccountAlreadyRegistered,
     }
 
     /// The pallet's dispatchable functions ([`Call`]s).
@@ -290,7 +297,7 @@ pub mod pallet {
         /// Publish location data to storage.
         ///
         /// This is called by the offchain worker to store location coordinates.
-        #[pallet::call_index(3)]
+        #[pallet::call_index(1)]
         #[pallet::weight(T::WeightInfo::do_something())]
         pub fn register_node(
             origin: OriginFor<T>,
@@ -301,17 +308,11 @@ pub mod pallet {
             // Check that the extrinsic was signed and get the signer.
             let who = ensure_signed(origin)?;
 
-            // Confirm if the bluetooth address is not already registered
-            assert!(
-                !AddressRegistrationData::<T>::contains_key(address),
-                "Node with this address is already registered"
-            );
+            // Confirm if the bluetooth address is not already taken
+            ensure!(!AddressRegistrationData::<T>::contains_key(address), Error::<T>::BluetoothAddressAlreadyTaken);
 
             // Confirm if the account is not already registered
-            assert!(
-                !AccountData::<T>::contains_key(&who),
-                "This account has already registered a node"
-            );
+            ensure!(!AccountData::<T>::contains_key(&who), Error::<T>::AccountAlreadyRegistered);
 
             // Create location data
             let location_data = LocationData {
@@ -324,12 +325,13 @@ pub mod pallet {
             AccountData::<T>::insert(who.clone(), location_data.clone());
             AddressRegistrationData::<T>::insert(address, who.clone());
 
-            log::info!(
-                "Registered location for {:?}: lat={}, lon={}",
+            // Emit an event.
+            Self::deposit_event(Event::NodeRegistered {
                 address,
+                who,
                 latitude,
-                longitude
-            );
+                longitude,
+            });
 
             // Return a successful `DispatchResult`
             Ok(())
@@ -344,8 +346,8 @@ pub mod pallet {
         /// - `origin`: Must be root (sudo)
         /// - `server_url`: The server URL (e.g., "localhost", "192.168.1.100")
         /// - `server_port`: The server port (e.g., 3000, 8080)
-        #[pallet::call_index(1)]
-        #[pallet::weight(T::WeightInfo::cause_error())]
+        #[pallet::call_index(2)]
+        #[pallet::weight(T::WeightInfo::do_something())]
         pub fn set_server_config(
             origin: OriginFor<T>,
             server_url: Vec<u8>,
@@ -377,37 +379,6 @@ pub mod pallet {
             );
 
             Ok(())
-        }
-
-        /// An example dispatchable that may throw a custom error.
-        ///
-        /// It checks that the caller is a signed origin and reads the current value from the
-        /// `Something` storage item. If a current value exists, it is incremented by 1 and then
-        /// written back to storage.
-        ///
-        /// ## Errors
-        ///
-        /// The function will return an error under the following conditions:
-        ///
-        /// - If no value has been set ([`Error::NoneValue`])
-        /// - If incrementing the value in storage causes an arithmetic overflow
-        ///   ([`Error::StorageOverflow`])
-        #[pallet::call_index(2)]
-        #[pallet::weight(T::WeightInfo::cause_error())]
-        pub fn cause_error(origin: OriginFor<T>) -> DispatchResult {
-            let _who = ensure_signed(origin)?;
-
-            let block_number = frame_system::Pallet::<T>::block_number();
-
-            match RssiData::<T>::get((block_number, [0u8; 6], _who)) {
-                Some(old_value) => {
-                    let _new_value = old_value
-                        .checked_add(1)
-                        .ok_or(Error::<T>::StorageOverflow)?;
-                    Ok(())
-                }
-                None => Err(Error::<T>::NoneValue.into()),
-            }
         }
     }
 
