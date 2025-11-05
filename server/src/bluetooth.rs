@@ -1,4 +1,6 @@
-use bluer::{AdapterEvent, Address, DeviceEvent, DeviceProperty};
+use bluer::{
+    adv::Advertisement, AdapterEvent, Address, DeviceEvent, DeviceProperty, DiscoveryTransport,
+};
 use codec::{Decode, Encode};
 use futures::stream::StreamExt;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -9,6 +11,7 @@ use tokio::sync::Mutex;
 use tokio::time;
 
 const MAX_RSSI_QUEUE_SIZE: usize = 5;
+const BLUETOOTH_SERVICE_UUID: &str = "0000b4e7-0000-1000-8000-00805f9b34fb";
 
 #[derive(Encode, Decode, Debug, Clone)]
 pub struct DeviceRssi {
@@ -32,10 +35,8 @@ pub fn get_neighbour_addresses() -> HashSet<Address> {
         .collect()
 }
 
-pub fn get_bluetooth_address() -> Address {
-    let addr_str =
-        std::env::var("BLUETOOTH_ADDRESS").expect("BLUETOOTH_ADDRESS environment variable not set");
-    addr_str.parse().expect("Invalid BLUETOOTH_ADDRESS format")
+pub async fn get_bluetooth_address(adapter: &bluer::Adapter) -> Address {
+    adapter.address().await.expect("Failed to get adapter address")
 }
 
 fn calculate_median(values: &mut Vec<i16>) -> Option<i16> {
@@ -57,11 +58,36 @@ fn calculate_median(values: &mut Vec<i16>) -> Option<i16> {
 pub type RssiData = Arc<Mutex<HashMap<Address, VecDeque<i16>>>>;
 pub type DeviceNames = Arc<Mutex<HashMap<Address, String>>>;
 
-pub async fn start_continuous_scan(
+async fn start_advertising(adapter: &bluer::Adapter) -> Result<(), Box<dyn Error>> {    
+    println!("Starting BLE advertising...");
+
+    let advertisement = Advertisement {
+        // If it never connects, it should be 'Broadcast'.
+        advertisement_type: bluer::adv::Type::Broadcast,
+
+        // Add a service UUID. This is often used by apps to find specific devices.
+        service_uuids: [BLUETOOTH_SERVICE_UUID.parse().unwrap()]
+            .into_iter()
+            .collect(),
+
+        ..Default::default()
+    };
+
+    let _handle = adapter.advertise(advertisement).await?;
+    println!("BLE advertising started with service UUID: {}", BLUETOOTH_SERVICE_UUID);
+
+    // Keep advertising running indefinitely
+    loop {
+        time::sleep(Duration::from_secs(60)).await;
+    }
+}
+
+async fn scan_devices(
+    adapter: &bluer::Adapter,
     rssi_data: RssiData,
     device_names: DeviceNames,
 ) -> Result<(), Box<dyn Error>> {
-    println!("Starting continuous Bluetooth RSSI scan...");
+    println!("Starting device scanning...");
 
     // Get the list of target Bluetooth addresses to monitor
     let target_set = get_neighbour_addresses();
@@ -74,22 +100,28 @@ pub async fn start_continuous_scan(
 
     println!("Monitoring {} device(s)", target_set.len());
 
-    // Get the Bluetooth adapter
-    let session = bluer::Session::new().await?;
-    let adapter = session.default_adapter().await?;
-    println!("Using adapter: {}", adapter.name());
+    adapter
+        .set_discovery_filter(bluer::DiscoveryFilter {
+            // Only look for LE devices.
+            transport: DiscoveryTransport::Le,
 
-    // Power on the adapter if it's not already.
-    adapter.set_powered(true).await?;
+            // filter by service UUIDs.
+            uuids: vec![BLUETOOTH_SERVICE_UUID.parse().unwrap()]
+                .into_iter()
+                .collect(),
 
-    // Make the adapter discoverable.
-    adapter.set_discoverable(true).await?;
+            // Set discoverable to true
+            discoverable: true,
+
+            ..Default::default()
+        })
+        .await?;
 
     // Start discovery
     let discover = adapter.discover_devices().await?;
     tokio::pin!(discover);
 
-    println!("Continuous scanning started...");
+    println!("Device scanning started...");
 
     // Track spawned tasks so we can abort them when devices are removed
     let mut device_tasks: HashMap<Address, tokio::task::JoinHandle<()>> = HashMap::new();
@@ -110,8 +142,6 @@ pub async fn start_continuous_scan(
                             continue;
                         }
 
-                        println!("Device added: {}", addr);
-
                         let device = adapter.device(addr)?;
 
                         // Get initial device name
@@ -122,6 +152,20 @@ pub async fn start_continuous_scan(
                         // Spawn a task to listen for RSSI changes on this device
                         let rssi_data_clone = Arc::clone(&rssi_data);
                         let device_names_clone = Arc::clone(&device_names);
+
+                        let rssi = device.rssi().await?.unwrap_or(0);
+                        println!("Device added: {} (RSSI: {})", addr, rssi);
+
+                        if rssi != 0 {
+                            let mut data = rssi_data_clone.lock().await;
+                            let deque = data.entry(addr).or_insert_with(VecDeque::new);
+
+                            // Keep only the last MAX_RSSI_QUEUE_SIZE values
+                            if deque.len() >= MAX_RSSI_QUEUE_SIZE {
+                                deque.pop_front();
+                            }
+                            deque.push_back(rssi);
+                        }
 
                         let task = tokio::spawn(async move {
                             if let Ok(events) = device.events().await {
@@ -161,6 +205,10 @@ pub async fn start_continuous_scan(
                             task.abort();
                             println!("Device removed, task aborted: {}", addr);
                         }
+
+                        // Also remove RSSI data and name
+                        rssi_data.lock().await.remove(&addr);
+                        device_names.lock().await.remove(&addr);
                     }
                     _ => {}
                 }
@@ -170,6 +218,39 @@ pub async fn start_continuous_scan(
             }
         }
     }
+}
+
+pub async fn start_continuous_scan(
+    adapter: bluer::Adapter,
+    rssi_data: RssiData,
+    device_names: DeviceNames,
+) -> Result<(), Box<dyn Error>> {
+    println!("Starting continuous Bluetooth operations...");
+
+    // Get the Bluetooth adapter
+    println!("Using adapter: {} ({})", adapter.address().await?, adapter.name());
+
+    // Power on the adapter if it's not already.
+    adapter.set_powered(true).await?;
+
+    // Make the adapter discoverable.
+    adapter.set_discoverable(true).await?;
+
+    // Set discoverable timeout to 0 (never timeout).
+    adapter.set_discoverable_timeout(0).await?;
+
+    // Clone adapter for the advertising task
+    let adapter_clone = adapter.clone();
+
+    // Spawn advertising task
+    tokio::spawn(async move {
+        if let Err(e) = start_advertising(&adapter_clone).await {
+            eprintln!("Advertising error: {}", e);
+        }
+    });
+
+    // Run device scanning (this blocks indefinitely)
+    scan_devices(&adapter, rssi_data, device_names).await
 }
 
 pub async fn get_current_rssi(

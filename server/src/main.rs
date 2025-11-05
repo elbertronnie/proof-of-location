@@ -8,6 +8,7 @@ use axum::{
     routing::get,
     Router,
 };
+use bluer;
 use codec::{Decode, Encode};
 use std::collections::HashMap;
 use std::error::Error;
@@ -28,6 +29,7 @@ struct LocationResponse {
 
 #[derive(Clone)]
 struct AppState {
+    adapter: bluer::Adapter,
     rssi_data: bluetooth::RssiData,
     device_names: bluetooth::DeviceNames,
 }
@@ -62,7 +64,7 @@ async fn scan_rssi(State(state): State<AppState>, req: Request) -> impl IntoResp
     }
 }
 
-async fn get_location(req: Request) -> impl IntoResponse {
+async fn get_location(State(state): State<AppState>, req: Request) -> impl IntoResponse {
     // Extract and log the Node ID from the X-Node-ID header
     let node_id = req
         .headers()
@@ -83,7 +85,7 @@ async fn get_location(req: Request) -> impl IntoResponse {
         .and_then(|s| s.parse::<f64>().ok())
         .unwrap_or(0.0);
 
-    let address = bluetooth::get_bluetooth_address();
+    let address = bluetooth::get_bluetooth_address(&state.adapter).await;
 
     let response = LocationResponse {
         address: address.0,
@@ -109,15 +111,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Starting Bluetooth RSSI Scanner Server...\n");
 
+    // Create Bluetooth session
+    let session = bluer::Session::new().await.expect("Failed to create Bluetooth session");
+    let adapter = session.default_adapter().await.expect("Failed to get default adapter");
+
     // Create shared state for RSSI data
     let rssi_data: bluetooth::RssiData = Arc::new(Mutex::new(HashMap::new()));
     let device_names: bluetooth::DeviceNames = Arc::new(Mutex::new(HashMap::new()));
 
     // Spawn background task for continuous Bluetooth scanning
+    let adapter_clone = adapter.clone();
     let rssi_data_clone = Arc::clone(&rssi_data);
     let device_names_clone = Arc::clone(&device_names);
     tokio::spawn(async move {
-        if let Err(e) = bluetooth::start_continuous_scan(rssi_data_clone, device_names_clone).await
+        if let Err(e) = bluetooth::start_continuous_scan(adapter_clone, rssi_data_clone, device_names_clone).await
         {
             eprintln!("Bluetooth scan error: {}", e);
         }
@@ -125,6 +132,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Create app state
     let app_state = AppState {
+        adapter,
         rssi_data,
         device_names,
     };
