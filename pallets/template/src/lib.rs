@@ -138,13 +138,10 @@ pub mod pallet {
         /// A type representing the weights required by the dispatchables of this pallet.
         type WeightInfo: WeightInfo;
 
-        /// Default server URL for fetching RSSI data (used if not set via set_server_config)
+        /// Default server URL with port for fetching data (used if not set via set_server_config)
+        /// Format: "hostname:port" or "ip:port" (e.g., "localhost:3000")
         #[pallet::constant]
         type ServerUrl: Get<&'static [u8]>;
-
-        /// Default server port for fetching RSSI data (used if not set via set_server_config)
-        #[pallet::constant]
-        type ServerPort: Get<u16>;
     }
 
     #[derive(Encode, Decode, Debug, Clone, TypeInfo)]
@@ -201,6 +198,15 @@ pub mod pallet {
     #[pallet::storage]
     pub type AccountData<T: Config> =
         StorageMap<Hasher = Blake2_128Concat, Key = T::AccountId, Value = LocationData>;
+
+    /// Storage for server configuration per account (node)
+    /// Maps AccountId -> server URL (format: "hostname:port" or "ip:port")
+    #[pallet::storage]
+    pub type ServerConfig<T: Config> = StorageMap<
+        Hasher = Blake2_128Concat,
+        Key = T::AccountId,
+        Value = BoundedVec<u8, ConstU32<256>>,
+    >;
 
     /// Events that functions in this pallet can emit.
     ///
@@ -309,10 +315,16 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
 
             // Confirm if the bluetooth address is not already taken
-            ensure!(!AddressRegistrationData::<T>::contains_key(address), Error::<T>::BluetoothAddressAlreadyTaken);
+            ensure!(
+                !AddressRegistrationData::<T>::contains_key(address),
+                Error::<T>::BluetoothAddressAlreadyTaken
+            );
 
             // Confirm if the account is not already registered
-            ensure!(!AccountData::<T>::contains_key(&who), Error::<T>::AccountAlreadyRegistered);
+            ensure!(
+                !AccountData::<T>::contains_key(&who),
+                Error::<T>::AccountAlreadyRegistered
+            );
 
             // Create location data
             let location_data = LocationData {
@@ -337,45 +349,33 @@ pub mod pallet {
             Ok(())
         }
 
-        /// Set the server configuration for this specific node's offchain worker.
-        /// This is stored in offchain local storage and is node-specific.
+        /// Set the server configuration for a specific account's offchain worker.
+        /// This is stored in on-chain storage and is account-specific.
         ///
         /// This allows each node to connect to a different server without recompiling.
         ///
         /// ## Parameters
-        /// - `origin`: Must be root (sudo)
-        /// - `server_url`: The server URL (e.g., "localhost", "192.168.1.100")
-        /// - `server_port`: The server port (e.g., 3000, 8080)
+        /// - `origin`: Must be signed by the account
+        /// - `server_url`: The full server URL with port (e.g., "localhost:3000", "192.168.1.100:8080")
         #[pallet::call_index(2)]
         #[pallet::weight(T::WeightInfo::do_something())]
-        pub fn set_server_config(
-            origin: OriginFor<T>,
-            server_url: Vec<u8>,
-            server_port: u16,
-        ) -> DispatchResult {
-            // Only root/sudo can set this
-            ensure_root(origin)?;
+        pub fn set_server_config(origin: OriginFor<T>, server_url: Vec<u8>) -> DispatchResult {
+            // Check that the extrinsic was signed and get the signer
+            let who = ensure_signed(origin)?;
 
-            // Store in offchain local storage (node-specific)
-            let url_key = b"pallet-template::server_url";
-            let port_key = b"pallet-template::server_port";
+            // Convert to BoundedVec
+            let bounded_url: BoundedVec<u8, ConstU32<256>> = server_url
+                .clone()
+                .try_into()
+                .map_err(|_| "Server URL too long (max 256 bytes)")?;
 
-            sp_io::offchain::local_storage_set(
-                sp_core::offchain::StorageKind::PERSISTENT,
-                url_key,
-                &server_url,
-            );
-
-            sp_io::offchain::local_storage_set(
-                sp_core::offchain::StorageKind::PERSISTENT,
-                port_key,
-                &server_port.to_le_bytes(),
-            );
+            // Store in on-chain storage
+            ServerConfig::<T>::insert(who.clone(), bounded_url);
 
             log::info!(
-                "Server configuration updated: {}:{}",
-                core::str::from_utf8(&server_url).unwrap_or("Invalid UTF-8"),
-                server_port
+                "Server configuration updated for account {:?}: {}",
+                who,
+                core::str::from_utf8(&server_url).unwrap_or("Invalid UTF-8")
             );
 
             Ok(())
@@ -436,6 +436,38 @@ pub mod pallet {
                 0..=9 => b'0' + nibble,
                 10..=15 => b'a' + (nibble - 10),
                 _ => b'?',
+            }
+        }
+
+        /// Get the server base URL for the current account
+        /// Returns the configured URL or falls back to default configuration
+        fn get_server_base_url() -> Result<String, http::Error> {
+            // Get signing keys to determine account ID
+            let keys = sp_io::crypto::sr25519_public_keys(crate::KEY_TYPE);
+
+            if let Some(key) = keys.first() {
+                // Convert public key to AccountId
+                let account_id = T::AccountId::decode(&mut &key.encode()[..])
+                    .map_err(|_| http::Error::Unknown)?;
+
+                // Try to get account-specific configuration from on-chain storage
+                if let Some(server_url_bounded) = ServerConfig::<T>::get(&account_id) {
+                    let server_url = server_url_bounded.to_vec();
+                    let url_str =
+                        sp_std::str::from_utf8(&server_url).map_err(|_| http::Error::Unknown)?;
+                    log::info!("Using account-specific server config: {}", url_str);
+                    Ok(alloc::format!("http://{}", url_str))
+                } else {
+                    // Fall back to default configuration
+                    let default_url = T::ServerUrl::get();
+                    let url_str =
+                        sp_std::str::from_utf8(default_url).map_err(|_| http::Error::Unknown)?;
+                    log::info!("Using default server config: {}", url_str);
+                    Ok(alloc::format!("http://{}", url_str))
+                }
+            } else {
+                log::error!("No signing account available");
+                Err(http::Error::Unknown)
             }
         }
 
@@ -500,42 +532,9 @@ pub mod pallet {
 
         /// Fetch RSSI data from the bluetooth server
         fn fetch_rssi_from_server() -> Result<RssiResponse, http::Error> {
-            // Try to get node-specific configuration from offchain local storage
-            let url_key = b"pallet-template::server_url";
-            let port_key = b"pallet-template::server_port";
-
-            let server_url_bytes = sp_io::offchain::local_storage_get(
-                sp_core::offchain::StorageKind::PERSISTENT,
-                url_key,
-            );
-
-            let server_port_bytes = sp_io::offchain::local_storage_get(
-                sp_core::offchain::StorageKind::PERSISTENT,
-                port_key,
-            );
-
-            // Build the URL based on configuration
-            let url = match (server_url_bytes, server_port_bytes) {
-                (Some(url_bytes), Some(port_bytes)) => {
-                    let url_str =
-                        sp_std::str::from_utf8(&url_bytes).map_err(|_| http::Error::Unknown)?;
-                    let port = u16::from_le_bytes([
-                        port_bytes.get(0).copied().unwrap_or(0),
-                        port_bytes.get(1).copied().unwrap_or(0),
-                    ]);
-                    log::info!("Using node-specific server config: {}:{}", url_str, port);
-                    alloc::format!("http://{}:{}/rssi", url_str, port)
-                }
-                _ => {
-                    // Fall back to default configuration
-                    let default_url = T::ServerUrl::get();
-                    let url_str =
-                        sp_std::str::from_utf8(default_url).map_err(|_| http::Error::Unknown)?;
-                    let port = T::ServerPort::get();
-                    log::info!("Using default server config: {}:{}", url_str, port);
-                    alloc::format!("http://{}:{}/rssi", url_str, port)
-                }
-            };
+            // Get the server base URL
+            let base_url = Self::get_server_base_url()?;
+            let url = alloc::format!("{}/rssi", base_url);
 
             log::info!("Fetching RSSI data from: {}", url);
 
@@ -583,42 +582,9 @@ pub mod pallet {
 
         /// Fetch location data from the server
         fn fetch_location_from_server() -> Result<LocationResponse, http::Error> {
-            // Try to get node-specific configuration from offchain local storage
-            let url_key = b"pallet-template::server_url";
-            let port_key = b"pallet-template::server_port";
-
-            let server_url_bytes = sp_io::offchain::local_storage_get(
-                sp_core::offchain::StorageKind::PERSISTENT,
-                url_key,
-            );
-
-            let server_port_bytes = sp_io::offchain::local_storage_get(
-                sp_core::offchain::StorageKind::PERSISTENT,
-                port_key,
-            );
-
-            // Build the URL based on configuration
-            let url = match (server_url_bytes, server_port_bytes) {
-                (Some(url_bytes), Some(port_bytes)) => {
-                    let url_str =
-                        sp_std::str::from_utf8(&url_bytes).map_err(|_| http::Error::Unknown)?;
-                    let port = u16::from_le_bytes([
-                        port_bytes.get(0).copied().unwrap_or(0),
-                        port_bytes.get(1).copied().unwrap_or(0),
-                    ]);
-                    log::info!("Using node-specific server config: {}:{}", url_str, port);
-                    alloc::format!("http://{}:{}/location", url_str, port)
-                }
-                _ => {
-                    // Fall back to default configuration
-                    let default_url = T::ServerUrl::get();
-                    let url_str =
-                        sp_std::str::from_utf8(default_url).map_err(|_| http::Error::Unknown)?;
-                    let port = T::ServerPort::get();
-                    log::info!("Using default server config: {}:{}", url_str, port);
-                    alloc::format!("http://{}:{}/location", url_str, port)
-                }
-            };
+            // Get the server base URL
+            let base_url = Self::get_server_base_url()?;
+            let url = alloc::format!("{}/location", base_url);
 
             log::info!("Fetching location data from: {}", url);
 
