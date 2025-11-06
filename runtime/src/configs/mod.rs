@@ -163,9 +163,11 @@ impl pallet_template::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = pallet_template::weights::SubstrateWeight<Runtime>;
     type ServerUrl = ServerUrl;
+    type MaxDistanceMeters = MaxDistanceMeters;
 }
 
 // Server configuration constants
 parameter_types! {
     pub const ServerUrl: &'static [u8] = b"localhost:3000";
+    pub const MaxDistanceMeters: u32 = 10;
 }

@@ -249,7 +249,7 @@
         }
 
         function latLonToPixel(lat, lon) {
-            const bounds = { minLat: -0.0002, maxLat: 0.0002, minLon: -0.0002, maxLon: 0.0002 };
+            const bounds = { minLat: -0.00002, maxLat: 0.00002, minLon: -0.00002, maxLon: 0.00002 };
             const rect = map.getBoundingClientRect();
             const x = ((lon - bounds.minLon) / (bounds.maxLon - bounds.minLon)) * rect.width;
             const y = ((bounds.maxLat - lat) / (bounds.maxLat - bounds.minLat)) * rect.height;
@@ -257,7 +257,7 @@
         }
 
         function pixelToLatLon(x, y) {
-            const bounds = { minLat: -0.0002, maxLat: 0.0002, minLon: -0.0002, maxLon: 0.0002 };
+            const bounds = { minLat: -0.00002, maxLat: 0.00002, minLon: -0.00002, maxLon: 0.00002 };
             const rect = map.getBoundingClientRect();
             const lat = bounds.maxLat - (y / rect.height) * (bounds.maxLat - bounds.minLat);
             const lon = bounds.minLon + (x / rect.width) * (bounds.maxLon - bounds.minLon);

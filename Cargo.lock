@@ -3606,6 +3606,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "haversine-redux"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2abffa11ddce2822369cce72692f6d27f5d117e5c31469d3b82172c39919c07e"
+dependencies = [
+ "libm",
+]
+
+[[package]]
 name = "haversine-rs"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6140,6 +6149,7 @@ dependencies = [
  "frame-benchmarking",
  "frame-support",
  "frame-system",
+ "haversine-redux",
  "log",
  "parity-scale-codec",
  "scale-info",

@@ -23,6 +23,7 @@ sp-core.workspace = true
 sp-io.workspace = true
 sp-runtime.workspace = true
 sp-std = { version = "14.0.0", default-features = false }
+haversine-redux = { version = "0.2.1", features = ["no_std"] }
 
 [dev-dependencies]
 sp-core = { default-features = true, workspace = true }

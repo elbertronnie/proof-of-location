@@ -142,6 +142,9 @@ pub mod pallet {
         /// Format: "hostname:port" or "ip:port" (e.g., "localhost:3000")
         #[pallet::constant]
         type ServerUrl: Get<&'static [u8]>;
+
+        /// Maximum allowed distance between 2 nodes (in meters) to consider publishing RSSI data.
+        type MaxDistanceMeters: Get<u32>;
     }
 
     #[derive(Encode, Decode, Debug, Clone, TypeInfo)]
@@ -185,8 +188,8 @@ pub mod pallet {
     pub type RssiData<T: Config> = StorageNMap<
         Key = (
             NMapKey<Identity, BlockNumberFor<T>>,
-            NMapKey<Blake2_128Concat, [u8; 6]>,
-            NMapKey<Blake2_128Concat, T::AccountId>,
+            NMapKey<Blake2_128Concat, T::AccountId>, // neighbour account
+            NMapKey<Blake2_128Concat, T::AccountId>, // reporting account
         ),
         Value = i16,
     >;
@@ -221,10 +224,10 @@ pub mod pallet {
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
-        /// A user has successfully set a new value.
+        /// A user has successfully published RSSI of its neighbour.
         RssiStored {
             block_number: BlockNumberFor<T>,
-            address: [u8; 6],
+            neighbour: T::AccountId,
             who: T::AccountId,
             rssi: i16,
         },
@@ -251,6 +254,12 @@ pub mod pallet {
         BluetoothAddressAlreadyTaken,
         /// Account has already registered a node
         AccountAlreadyRegistered,
+        /// Account is not registered as a node
+        AccountNotRegistered,
+        /// Bluetooth Address is not a registered
+        BluetoothAddressNotRegistered,
+        /// Distance between nodes exceeds maximum allowed distance
+        ExceedsMaxDistance,
     }
 
     /// The pallet's dispatchable functions ([`Call`]s).
@@ -276,22 +285,55 @@ pub mod pallet {
         #[pallet::weight(T::WeightInfo::do_something())]
         pub fn publish_rssi_data(
             origin: OriginFor<T>,
-            address: [u8; 6],
+            neighbour: T::AccountId,
             rssi: i16,
         ) -> DispatchResult {
             // Check that the extrinsic was signed and get the signer.
             let who = ensure_signed(origin)?;
 
+            // Check that origin account is registered.
+            ensure!(
+                AccountData::<T>::contains_key(&who),
+                Error::<T>::AccountNotRegistered
+            );
+
+            // Check that neighbour account is registered.
+            ensure!(
+                AccountData::<T>::contains_key(&neighbour),
+                Error::<T>::AccountNotRegistered
+            );
+
+            // Get account locations
+            let reporter_location = AccountData::<T>::get(&who).unwrap();
+            let neighbour_location = AccountData::<T>::get(&neighbour).unwrap();
+
+            // Convert them to normal units
+            let reporter_latitude = reporter_location.latitude as f64 / 1_000_000.0;
+            let reporter_longitude = reporter_location.longitude as f64 / 1_000_000.0;
+            let neighbour_latitude = neighbour_location.latitude as f64 / 1_000_000.0;
+            let neighbour_longitude = neighbour_location.longitude as f64 / 1_000_000.0;
+
+            use haversine_redux::Location;
+            let a = Location::new(reporter_latitude, reporter_longitude);
+            let b = Location::new(neighbour_latitude, neighbour_longitude);
+            let distance = a.kilometers_to(&b) * 1000.0; // convert km to meters
+
+            // Check that distance is within allowed maximum.
+            ensure!(
+                distance <= T::MaxDistanceMeters::get() as f64,
+                Error::<T>::ExceedsMaxDistance
+            );
+
             // Get the current block number.
             let block_number = frame_system::Pallet::<T>::block_number();
 
             // Update storage.
-            RssiData::<T>::insert((block_number, address, who.clone()), rssi);
+            RssiData::<T>::insert((block_number, neighbour.clone(), who.clone()), rssi);
 
             // Emit an event.
             Self::deposit_event(Event::RssiStored {
                 block_number,
-                address,
+                neighbour,
                 who,
                 rssi,
             });
@@ -511,8 +553,20 @@ pub mod pallet {
 
             // Submit a signed transaction for each device
             for device in rssi_response.devices.iter() {
+                // Map bluetooth address to account
+                let account = match AddressRegistrationData::<T>::get(device.address) {
+                    Some(account_id) => account_id,
+                    None => {
+                        log::warn!(
+                            "Bluetooth address {:?} not registered, skipping",
+                            device.address
+                        );
+                        continue;
+                    }
+                };
+
                 let call = Call::publish_rssi_data {
-                    address: device.address,
+                    neighbour: account,
                     rssi: device.rssi,
                 };
 

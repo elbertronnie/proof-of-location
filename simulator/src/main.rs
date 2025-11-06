@@ -17,23 +17,23 @@ const ALICE_BLUETOOTH_ADDRESS: &str = "AA:BB:CC:DD:EE:01";
 
 const BOB_NODE_ID: &str = "0x8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48";
 const BOB_BLUETOOTH_ADDRESS: &str = "AA:BB:CC:DD:EE:02";
-const BOB_LATITUDE: f64 = 0.0001;
+const BOB_LATITUDE: f64 = 0.00001;
 const BOB_LONGITUDE: f64 = 0.0;
 
 const CHARLIE_NODE_ID: &str = "0x90b5bbe3dba8afc0d6b2f5502b6f3c4f1edb3e4f6f9b1f3c4e5d6a7b8c9d0e1f";
 const CHARLIE_BLUETOOTH_ADDRESS: &str = "AA:BB:CC:DD:EE:03";
-const CHARLIE_LATITUDE: f64 = -0.0001;
+const CHARLIE_LATITUDE: f64 = -0.00001;
 const CHARLIE_LONGITUDE: f64 = 0.0;
 
 const DAVE_NODE_ID: &str = "0x2a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef";
 const DAVE_BLUETOOTH_ADDRESS: &str = "AA:BB:CC:DD:EE:04";
 const DAVE_LATITUDE: f64 = 0.0;
-const DAVE_LONGITUDE: f64 = 0.0001;
+const DAVE_LONGITUDE: f64 = 0.00001;
 
 const EVE_NODE_ID: &str = "0xfedcba98765432100123456789abcdef0123456789abcdef0123456789abcd";
 const EVE_BLUETOOTH_ADDRESS: &str = "AA:BB:CC:DD:EE:05";
 const EVE_LATITUDE: f64 = 0.0;
-const EVE_LONGITUDE: f64 = -0.0001;
+const EVE_LONGITUDE: f64 = -0.00001;
 
 const PATH_LOSS_EXPONENT: f64 = 3.0;
 
@@ -69,7 +69,7 @@ fn estimate_rssi(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> i16 {
     let a = Point::new(a_lat, a_lon);
     let b = Point::new(b_lat, b_lon);
     let dist = distance(a, b, Unit::Meters);
-    let rssi = -30.0 - PATH_LOSS_EXPONENT * 10.0 * dist.log10();
+    let rssi = -60.0 - PATH_LOSS_EXPONENT * 10.0 * dist.log10();
     rssi as i16
 }
 
