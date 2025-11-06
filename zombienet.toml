@@ -15,3 +15,18 @@ validator = true
 name = "bob"
 rpc_port = 9945
 validator = true
+
+[[relaychain.nodes]]
+name = "charlie"
+rpc_port = 9946
+validator = true
+
+[[relaychain.nodes]]
+name = "dave"
+rpc_port = 9947
+validator = true
+
+[[relaychain.nodes]]
+name = "eve"
+rpc_port = 9948
+validator = true
