@@ -10780,6 +10780,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "url",
+ "wasm-bindgen-futures",
  "web-time",
 ]
 
@@ -11496,6 +11497,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4ed310ef5ab98f5fa467900ed906cb9232dd5376597e00fd4cba2a449d06c0b"
 dependencies = [
  "hash-db",
+]
+
+[[package]]
+name = "trust-score"
+version = "0.1.0"
+dependencies = [
+ "haversine-redux",
+ "subxt",
+ "subxt-signer",
+ "tokio",
 ]
 
 [[package]]

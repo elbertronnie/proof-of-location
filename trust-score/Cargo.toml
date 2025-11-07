@@ -1,0 +1,14 @@
+[package]
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+name = "trust-score"
+repository.workspace = true
+version = "0.1.0"
+
+[dependencies]
+haversine-redux = "0.2.1"
+subxt = "0.38.1"
+subxt-signer = "0.38.1"
+tokio = { version = "1", features = ["full"] }
