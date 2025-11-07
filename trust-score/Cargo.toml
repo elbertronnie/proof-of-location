@@ -9,6 +9,9 @@ version = "0.1.0"
 
 [dependencies]
 dotenvy = { workspace = true }
+eframe = "0.29"
+egui = "0.29"
+egui_plot = "0.29"
 haversine-redux = { workspace = true }
 subxt = { workspace = true }
 subxt-signer = "0.38.1"

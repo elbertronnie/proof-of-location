@@ -1,192 +1,150 @@
-use std::collections::HashMap;
+mod score;
 
-use subxt::config::substrate::AccountId32;
-use subxt::{OnlineClient, SubstrateConfig};
-use subxt_signer::sr25519::dev;
+use std::sync::{Arc, Mutex};
 
-use substrate::runtime_types::pallet_template::pallet::LocationData;
+use eframe::egui;
+use egui_plot::{Bar, BarChart, Legend, Plot, PlotBounds};
 
-// This creates a complete, type-safe API for interacting with the runtime.
-#[subxt::subxt(runtime_metadata_path = "../metadata.scale")]
-pub mod substrate {}
+use score::ErrorData;
 
-// Create a new median scheme where 1/4 of the highest values are discarded
-fn trimmed_median_error(values: &mut [i16]) -> i16 {
-    if values.len() < 4 {
-        return i16::MAX;
-    }
+struct TrustScoreApp {
+    error_data: Arc<Mutex<Vec<ErrorData>>>,
+    block_number: Arc<Mutex<u32>>,
+}
 
-    values.iter_mut().for_each(|x| *x = x.abs());
-    values.sort_unstable();
-
-    let len = values.len();
-    let trim_end = (len * 3 / 4) as usize;
-    let trimmed = &values[..trim_end];
-
-    if trim_end % 2 == 1 {
-        trimmed[trim_end / 2]
-    } else {
-        let mid_upper = trimmed[trim_end / 2];
-        let mid_lower = trimmed[trim_end / 2 - 1];
-        (mid_upper + mid_lower) / 2
+impl TrustScoreApp {
+    fn new(error_data: Arc<Mutex<Vec<ErrorData>>>, block_number: Arc<Mutex<u32>>) -> Self {
+        Self {
+            error_data,
+            block_number,
+        }
     }
 }
 
-fn get_account_names() -> HashMap<[u8; 32], &'static str> {
-    let mut names = HashMap::new();
+impl eframe::App for TrustScoreApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Request continuous repaint to keep UI updated
+        ctx.request_repaint();
 
-    names.insert(dev::alice().public_key().0, "Alice");
-    names.insert(dev::bob().public_key().0, "Bob");
-    names.insert(dev::charlie().public_key().0, "Charlie");
-    names.insert(dev::dave().public_key().0, "Dave");
-    names.insert(dev::eve().public_key().0, "Eve");
-    names.insert(dev::ferdie().public_key().0, "Ferdie");
+        // Triple the default font size
+        let mut style = (*ctx.style()).clone();
+        style.text_styles.insert(
+            egui::TextStyle::Body,
+            egui::FontId::new(28.0, egui::FontFamily::Proportional),
+        );
+        style.text_styles.insert(
+            egui::TextStyle::Button,
+            egui::FontId::new(28.0, egui::FontFamily::Proportional),
+        );
+        style.text_styles.insert(
+            egui::TextStyle::Heading,
+            egui::FontId::new(36.0, egui::FontFamily::Proportional),
+        );
+        style.text_styles.insert(
+            egui::TextStyle::Monospace,
+            egui::FontId::new(28.0, egui::FontFamily::Monospace),
+        );
+        style.text_styles.insert(
+            egui::TextStyle::Small,
+            egui::FontId::new(20.0, egui::FontFamily::Proportional),
+        );
+        ctx.set_style(style);
 
-    names
-}
+        egui::CentralPanel::default().show(ctx, |ui| {
+            let block_num = *self.block_number.lock().unwrap();
+            ui.heading(format!("Trust Score Error Analysis - Block #{}", block_num));
+            ui.add_space(10.0);
 
-async fn fetch_all_location_data(
-    api: &OnlineClient<SubstrateConfig>,
-) -> Result<HashMap<[u8; 32], LocationData>, Box<dyn std::error::Error>> {
-    // Use the generated API to access the storage
-    let query = substrate::storage().template().account_data_iter();
+            let data = self.error_data.lock().unwrap().clone();
 
-    // Fetch all account data
-    let mut account_data = api.storage().at_latest().await?.iter(query).await?;
+            if data.is_empty() {
+                ui.label("Waiting for data...");
+                return;
+            }
 
-    // Store results inside a vector
-    let mut results = HashMap::new();
+            // Get available space for the plot
+            let available_height = ui.available_height();
 
-    // Collect all results
-    while let Some(Ok(data)) = account_data.next().await {
-        // Skip first 32 bytes (pallet + storage hashes) and 16 bytes (blake2_128 hash)
-        // Take the last 32 bytes as the account ID
-        let len = data.key_bytes.len();
-        let account_id: [u8; 32] = data.key_bytes[len - 32..].try_into().unwrap();
-        results.insert(account_id, data.value);
+            // Create bar chart with custom axis formatter for X-axis labels
+            let num_bars = data.len();
+
+            // Clone data for the formatter closure
+            let data_for_formatter = data.clone();
+
+            Plot::new("error_plot")
+                .legend(Legend::default())
+                .show_axes(true)
+                .allow_zoom(false)
+                .allow_drag(false)
+                .allow_scroll(false)
+                .allow_boxed_zoom(false)
+                .height(available_height)
+                .x_axis_formatter(move |mark, _range| {
+                    let index = mark.value as usize;
+                    if index < data_for_formatter.len() {
+                        data_for_formatter[index].account_name.clone()
+                    } else {
+                        String::new()
+                    }
+                })
+                .show(ui, |plot_ui| {
+                    // Set fixed Y-axis bounds from 0 to 10
+                    let x_min = -0.5;
+                    let x_max = num_bars as f64 - 0.5;
+                    plot_ui.set_plot_bounds(PlotBounds::from_min_max([x_min, 0.0], [x_max, 10.0]));
+
+                    let bars: Vec<Bar> = data
+                        .iter()
+                        .enumerate()
+                        .map(|(i, d)| {
+                            Bar::new(i as f64, d.error_value as f64)
+                                .width(0.7)
+                                .name(&d.account_name)
+                        })
+                        .collect();
+
+                    let chart = BarChart::new(bars).color(egui::Color32::from_rgb(100, 150, 250));
+                    plot_ui.bar_chart(chart);
+                });
+        });
     }
-
-    Ok(results)
 }
 
-async fn fetch_rssi(
-    api: &OnlineClient<SubstrateConfig>,
-    block_number: u32,
-    account: AccountId32,
-    reporter: AccountId32,
-) -> Result<Option<i16>, Box<dyn std::error::Error>> {
-    // Use the generated API to access the storage
-    let query = substrate::storage()
-        .template()
-        .rssi_data(block_number, account, reporter);
-
-    // Fetch the RSSI value
-    let rssi_value = api.storage().at_latest().await?.fetch(&query).await?;
-
-    Ok(rssi_value)
-}
-
-async fn fetch_all_rssi(
-    api: &OnlineClient<SubstrateConfig>,
-    block_number: u32,
-    account: AccountId32,
-) -> Result<HashMap<[u8; 32], i16>, Box<dyn std::error::Error>> {
-    // Use the generated API to access the storage
-    let query = substrate::storage()
-        .template()
-        .rssi_data_iter2(block_number, &account);
-
-    // Fetch all account data
-    let mut rssi_data = api.storage().at_latest().await?.iter(query).await?;
-
-    // Store results inside a vector
-    let mut results = HashMap::new();
-
-    // Collect all results
-    while let Some(Ok(data)) = rssi_data.next().await {
-        let len = data.key_bytes.len();
-        let account_id: [u8; 32] = data.key_bytes[len - 32..].try_into().unwrap();
-        results.insert(account_id, data.value);
-    }
-
-    Ok(results)
-}
-
-const PATH_LOSS_EXPONENT: f64 = 3.0;
-
-fn estimate_rssi(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> i16 {
-    use haversine_redux::Location;
-    let a = Location::new(a_lat, a_lon);
-    let b = Location::new(b_lat, b_lon);
-    let dist = a.kilometers_to(&b) * 1000.0; // convert kilometers to meters
-    let rssi = -60.0 - PATH_LOSS_EXPONENT * 10.0 * dist.log10();
-    rssi as i16
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load environment variables from .env file
     dotenvy::dotenv()?;
 
-    // Get RPC URL from environment variable or use default
-    let rpc_url = std::env::var("RPC_URL").unwrap_or_else(|_| "ws://127.0.0.1:9944".into());
+    // Shared state for error data and block number
+    let error_data = Arc::new(Mutex::new(Vec::new()));
+    let block_number = Arc::new(Mutex::new(0u32));
 
-    // Connect to the node
-    println!("Connecting to node at {}...", rpc_url);
-    let api = OnlineClient::<SubstrateConfig>::from_url(&rpc_url).await?;
+    // Clone for the blockchain thread
+    let error_data_clone = Arc::clone(&error_data);
+    let block_number_clone = Arc::clone(&block_number);
 
-    println!("Connected successfully!\n");
-
-    let account_name = get_account_names();
-
-    let mut blocks_sub = api.blocks().subscribe_finalized().await?;
-    while let Some(Ok(block)) = blocks_sub.next().await {
-        if block.number() < 3 {
-            continue;
-        }
-
-        println!("New finalized block: {}", block.number());
-
-        let all_accounts = fetch_all_location_data(&api).await?;
-
-        let mut errors = HashMap::new();
-        for (account, location_data) in &all_accounts {
-            let rssi_data =
-                fetch_all_rssi(&api, block.number(), AccountId32::from(*account)).await?;
-
-            for (reporter, rssi) in &rssi_data {
-                if let Some(_) = fetch_rssi(
-                    &api,
-                    block.number(),
-                    AccountId32::from(*account),
-                    AccountId32::from(*reporter),
-                )
-                .await?
-                {
-                    let reporter_location_data = all_accounts.get(reporter).unwrap();
-                    let estimated_rssi = estimate_rssi(
-                        location_data.latitude as f64 / 1_000_000.0,
-                        location_data.longitude as f64 / 1_000_000.0,
-                        reporter_location_data.latitude as f64 / 1_000_000.0,
-                        reporter_location_data.longitude as f64 / 1_000_000.0,
-                    );
-
-                    let error = *rssi - estimated_rssi;
-                    errors.entry(*account).or_insert_with(Vec::new).push(error);
-                }
+    // Spawn a thread to handle blockchain data fetching
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            if let Err(e) = score::blockchain_task(error_data_clone, block_number_clone).await {
+                eprintln!("Blockchain task error: {}", e);
             }
-        }
+        });
+    });
 
-        let mut sorted_errors: Vec<([u8; 32], Vec<i16>)> = errors.into_iter().collect();
-        sorted_errors.sort_by_key(|(x, _)| *x);
+    // Run the GUI on the main thread
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([800.0, 700.0])
+            .with_title("Trust Score Monitor"),
+        ..Default::default()
+    };
 
-        // Print the error values
-        for (account, mut values) in sorted_errors {
-            let name = account_name.get(&account).unwrap_or(&"Unknown");
-            let error = trimmed_median_error(&mut values);
-            println!("{}: {}", name, error);
-        }
-    }
+    eframe::run_native(
+        "Trust Score Monitor",
+        options,
+        Box::new(|_cc| Ok(Box::new(TrustScoreApp::new(error_data, block_number)))),
+    )?;
 
     Ok(())
 }
