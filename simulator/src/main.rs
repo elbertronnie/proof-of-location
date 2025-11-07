@@ -66,11 +66,15 @@ struct LocationResponse {
 
 fn estimate_rssi(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> i16 {
     use haversine_rs::{distance, point::Point, units::Unit};
+    use rand::{thread_rng, Rng};
+    use rand_distr::Normal;
+
     let a = Point::new(a_lat, a_lon);
     let b = Point::new(b_lat, b_lon);
     let dist = distance(a, b, Unit::Meters);
     let rssi = -60.0 - PATH_LOSS_EXPONENT * 10.0 * dist.log10();
-    rssi as i16
+    let noise = thread_rng().sample(Normal::new(0.0, 2.0).unwrap());
+    (rssi + noise) as i16
 }
 
 fn parse_bluetooth_address(addr_str: &str) -> Result<[u8; 6], Box<dyn Error>> {
@@ -325,8 +329,8 @@ async fn serve_ui() -> Html<&'static str> {
 async fn main() -> Result<(), Box<dyn Error>> {
     println!("Starting Location Simulator Server...\n");
     let state = Arc::new(RwLock::new(AlicePosition {
-        latitude: 0.0,
-        longitude: 0.0,
+        latitude: 0.00001,
+        longitude: 0.00001,
     }));
     let app = Router::new()
         .route("/", get(serve_ui))

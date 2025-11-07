@@ -9469,6 +9469,8 @@ dependencies = [
  "axum",
  "haversine-rs",
  "parity-scale-codec",
+ "rand 0.8.5",
+ "rand_distr",
  "serde",
  "serde_json",
  "tokio",
