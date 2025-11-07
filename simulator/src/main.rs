@@ -10,6 +10,7 @@ use codec::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::sync::Arc;
+use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 
 const ALICE_NODE_ID: &str = "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d";
@@ -65,13 +66,13 @@ struct LocationResponse {
 }
 
 fn estimate_rssi(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> i16 {
-    use haversine_rs::{distance, point::Point, units::Unit};
+    use haversine_redux::Location;
     use rand::{thread_rng, Rng};
     use rand_distr::Normal;
 
-    let a = Point::new(a_lat, a_lon);
-    let b = Point::new(b_lat, b_lon);
-    let dist = distance(a, b, Unit::Meters);
+    let a = Location::new(a_lat, a_lon);
+    let b = Location::new(b_lat, b_lon);
+    let dist = a.kilometers_to(&b) * 1000.0; // convert kilometers to meters
     let rssi = -60.0 - PATH_LOSS_EXPONENT * 10.0 * dist.log10();
     let noise = thread_rng().sample(Normal::new(0.0, 2.0).unwrap());
     (rssi + noise) as i16
@@ -348,7 +349,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     );
     println!("📡 RSSI endpoint: http://{}/rssi", addr);
     println!("📍 Location endpoint: http://{}/location\n", addr);
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    let listener = TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
 }

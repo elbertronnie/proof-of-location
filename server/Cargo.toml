@@ -8,12 +8,12 @@ repository.workspace = true
 version = "0.1.0"
 
 [dependencies]
-axum = "0.7"
+axum = { workspace = true }
 bluer = { version = "0.17", features = ["bluetoothd"] }
 codec = { workspace = true, features = ["derive"] }
-dotenvy = "0.15"
-futures = "0.3"
-tokio = { version = "1.0", features = ["full"] }
+dotenvy = { workspace = true }
+futures = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
 
 [package.metadata.cross.target.aarch64-unknown-linux-gnu]
 image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main"

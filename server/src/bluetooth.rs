@@ -1,5 +1,7 @@
 use bluer::{
-    adv::Advertisement, AdapterEvent, Address, DeviceEvent, DeviceProperty, DiscoveryTransport,
+    adv::{Advertisement, Type},
+    Adapter, AdapterEvent, Address, DeviceEvent, DeviceProperty, DiscoveryFilter,
+    DiscoveryTransport,
 };
 use codec::{Decode, Encode};
 use futures::stream::StreamExt;
@@ -8,7 +10,7 @@ use std::error::Error;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use tokio::time;
+use tokio::{task, time};
 
 const MAX_RSSI_QUEUE_SIZE: usize = 5;
 const BLUETOOTH_SERVICE_UUID: &str = "0000b4e7-0000-1000-8000-00805f9b34fb";
@@ -24,7 +26,7 @@ pub struct RssiResponse {
     pub devices: Vec<DeviceRssi>,
 }
 
-pub fn get_neighbour_addresses() -> HashSet<Address> {
+pub fn neighbour_addresses() -> HashSet<Address> {
     std::env::var("BLUETOOTH_ADDRESSES")
         .unwrap_or_default()
         .split(',')
@@ -34,7 +36,7 @@ pub fn get_neighbour_addresses() -> HashSet<Address> {
         .collect()
 }
 
-pub async fn get_bluetooth_address(adapter: &bluer::Adapter) -> Address {
+pub async fn bluetooth_address(adapter: &Adapter) -> Address {
     adapter
         .address()
         .await
@@ -59,12 +61,12 @@ fn calculate_median(values: &mut Vec<i16>) -> Option<i16> {
 // Global shared state for RSSI data
 pub type RssiData = Arc<Mutex<HashMap<Address, VecDeque<i16>>>>;
 
-async fn start_advertising(adapter: &bluer::Adapter) -> Result<(), Box<dyn Error>> {
+async fn start_advertising(adapter: &Adapter) -> Result<(), Box<dyn Error>> {
     println!("Starting BLE advertising...");
 
     let advertisement = Advertisement {
         // If it never connects, it should be 'Broadcast'.
-        advertisement_type: bluer::adv::Type::Broadcast,
+        advertisement_type: Type::Broadcast,
 
         // Add a service UUID. This is often used by apps to find specific devices.
         service_uuids: [BLUETOOTH_SERVICE_UUID.parse().unwrap()]
@@ -86,11 +88,11 @@ async fn start_advertising(adapter: &bluer::Adapter) -> Result<(), Box<dyn Error
     }
 }
 
-async fn scan_devices(adapter: &bluer::Adapter, rssi_data: RssiData) -> Result<(), Box<dyn Error>> {
+async fn scan_devices(adapter: &Adapter, rssi_data: RssiData) -> Result<(), Box<dyn Error>> {
     println!("Starting device scanning...");
 
     // Get the list of target Bluetooth addresses to monitor
-    let target_set = get_neighbour_addresses();
+    let target_set = neighbour_addresses();
 
     if target_set.is_empty() {
         return Err(
@@ -101,7 +103,7 @@ async fn scan_devices(adapter: &bluer::Adapter, rssi_data: RssiData) -> Result<(
     println!("Monitoring {} device(s)", target_set.len());
 
     adapter
-        .set_discovery_filter(bluer::DiscoveryFilter {
+        .set_discovery_filter(DiscoveryFilter {
             // Only look for LE devices.
             transport: DiscoveryTransport::Le,
 
@@ -124,7 +126,7 @@ async fn scan_devices(adapter: &bluer::Adapter, rssi_data: RssiData) -> Result<(
     println!("Device scanning started...");
 
     // Track spawned tasks so we can abort them when devices are removed
-    let mut device_tasks: HashMap<Address, tokio::task::JoinHandle<()>> = HashMap::new();
+    let mut device_tasks: HashMap<Address, task::JoinHandle<()>> = HashMap::new();
 
     // Continuously scan for devices
     loop {
@@ -209,7 +211,7 @@ async fn scan_devices(adapter: &bluer::Adapter, rssi_data: RssiData) -> Result<(
 }
 
 pub async fn start_continuous_scan(
-    adapter: bluer::Adapter,
+    adapter: Adapter,
     rssi_data: RssiData,
 ) -> Result<(), Box<dyn Error>> {
     println!("Starting continuous Bluetooth operations...");
@@ -244,7 +246,7 @@ pub async fn start_continuous_scan(
     scan_devices(&adapter, rssi_data).await
 }
 
-pub async fn get_current_rssi(rssi_data: RssiData) -> Result<RssiResponse, Box<dyn Error>> {
+pub async fn current_rssi(rssi_data: RssiData) -> Result<RssiResponse, Box<dyn Error>> {
     println!("Calculating median RSSI from current data...");
 
     let rssi_data_snapshot = rssi_data.lock().await.clone();

@@ -111,13 +111,13 @@ pub mod pallet {
     // Import various useful types required by all FRAME pallets.
     use super::*;
     use alloc::string::String;
+    use alloc::vec::Vec;
     use frame_support::pallet_prelude::*;
     use frame_system::offchain::{
         AppCrypto, CreateSignedTransaction, SendSignedTransaction, Signer,
     };
     use frame_system::pallet_prelude::*;
     use sp_runtime::offchain::{http, Duration};
-    use sp_std::prelude::*;
 
     // The `Pallet` struct serves as a placeholder to implement traits, methods and dispatchables
     // (`Call`s) in this pallet.
@@ -496,14 +496,14 @@ pub mod pallet {
                 if let Some(server_url_bounded) = ServerConfig::<T>::get(&account_id) {
                     let server_url = server_url_bounded.to_vec();
                     let url_str =
-                        sp_std::str::from_utf8(&server_url).map_err(|_| http::Error::Unknown)?;
+                        alloc::str::from_utf8(&server_url).map_err(|_| http::Error::Unknown)?;
                     log::info!("Using account-specific server config: {}", url_str);
                     Ok(alloc::format!("http://{}", url_str))
                 } else {
                     // Fall back to default configuration
                     let default_url = T::ServerUrl::get();
                     let url_str =
-                        sp_std::str::from_utf8(default_url).map_err(|_| http::Error::Unknown)?;
+                        alloc::str::from_utf8(default_url).map_err(|_| http::Error::Unknown)?;
                     log::info!("Using default server config: {}", url_str);
                     Ok(alloc::format!("http://{}", url_str))
                 }

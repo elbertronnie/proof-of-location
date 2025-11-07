@@ -125,6 +125,9 @@ fn estimate_rssi(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> i16 {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load environment variables from .env file
+    dotenvy::dotenv()?;
+
     // Get RPC URL from environment variable or use default
     let rpc_url = std::env::var("RPC_URL").unwrap_or_else(|_| "ws://127.0.0.1:9944".into());
 

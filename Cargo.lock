@@ -3615,12 +3615,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "haversine-rs"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a938f96298bab2f2315301ac84f6574c1f29a84d95956944cb4d380e6c0ff71e"
-
-[[package]]
 name = "heck"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6156,7 +6150,6 @@ dependencies = [
  "sp-core",
  "sp-io",
  "sp-runtime",
- "sp-std",
 ]
 
 [[package]]
@@ -9467,12 +9460,11 @@ name = "simulator"
 version = "0.1.0"
 dependencies = [
  "axum",
- "haversine-rs",
+ "haversine-redux",
  "parity-scale-codec",
  "rand 0.8.5",
  "rand_distr",
  "serde",
- "serde_json",
  "tokio",
 ]
 
@@ -11503,6 +11495,7 @@ dependencies = [
 name = "trust-score"
 version = "0.1.0"
 dependencies = [
+ "dotenvy",
  "haversine-redux",
  "subxt",
  "subxt-signer",
