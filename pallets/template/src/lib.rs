@@ -1,38 +1,39 @@
-//! # Template Pallet
+//! # Proof of Location Pallet
 //!
-//! A pallet with minimal functionality to help developers understand the essential components of
-//! writing a FRAME pallet. It is typically used in beginner tutorials or in Substrate template
-//! nodes as a starting point for creating a new pallet and **not meant to be used in production**.
+//! A FRAME pallet that enables decentralized proof-of-location verification through
+//! Bluetooth RSSI measurements and geographic proximity validation.
 //!
 //! ## Overview
 //!
-//! This template pallet contains basic examples of:
-//! - declaring a storage item that stores a single `u32` value
-//! - declaring and using events
-//! - declaring and using errors
-//! - a dispatchable function that allows a user to set a new value to storage and emits an event
-//!   upon success
-//! - another dispatchable function that causes a custom error to be thrown
+//! This pallet provides functionality for:
+//! - Registering nodes with Bluetooth addresses and GPS coordinates
+//! - Publishing RSSI (Received Signal Strength Indicator) data between neighboring nodes
+//! - Validating proximity between nodes using distance calculations
+//! - Configuring per-node server endpoints for offchain data fetching
+//! - Automatic node registration via offchain workers
 //!
 //! Each pallet section is annotated with an attribute using the `#[pallet::...]` procedural macro.
 //! This macro generates the necessary code for a pallet to be aggregated into a FRAME runtime.
 //!
 //! Learn more about FRAME macros [here](https://docs.substrate.io/reference/frame-macros/).
 //!
+//! ### Key Features
+//!
+//! - **Node Registration**: Nodes register with a unique Bluetooth MAC address and GPS coordinates
+//! - **RSSI Data Publishing**: Nodes report signal strength measurements from nearby neighbors
+//! - **Distance Validation**: Automatic verification that nodes are within configured maximum distance
+//! - **Offchain Worker Integration**: Automatic fetching of location and RSSI data from external servers
+//! - **Flexible Configuration**: Per-node server URL configuration stored on-chain
+//! - **Node Management**: Support for updating and unregistering nodes
+//!
 //! ### Pallet Sections
 //!
-//! The pallet sections in this template are:
-//!
-//! - A **configuration trait** that defines the types and parameters which the pallet depends on
-//!   (denoted by the `#[pallet::config]` attribute). See: [`Config`].
-//! - A **means to store pallet-specific data** (denoted by the `#[pallet::storage]` attribute).
-//!   See: [`storage_types`].
-//! - A **declaration of the events** this pallet emits (denoted by the `#[pallet::event]`
-//!   attribute). See: [`Event`].
-//! - A **declaration of the errors** that this pallet can throw (denoted by the `#[pallet::error]`
-//!   attribute). See: [`Error`].
-//! - A **set of dispatchable functions** that define the pallet's functionality (denoted by the
-//!   `#[pallet::call]` attribute). See: [`dispatchables`].
+//! - **Configuration trait** ([`Config`]): Defines the types, constants (server URL, max distance), and crypto requirements
+//! - **Storage items**: RssiData, AccountData, AddressRegistrationData, ServerConfig
+//! - **Events** ([`Event`]): RssiStored, NodeRegistered, NodeUnregistered, NodeUpdated
+//! - **Errors** ([`Error`]): Address/account validation and distance verification errors
+//! - **Dispatchable functions**: set_server_config, register_node, unregister_node, update_node_info, publish_rssi_data
+//! - **Offchain worker**: Automatic location registration and RSSI data submission
 //!
 //! Run `cargo doc --package pallet-template --open` to view this pallet's documentation.
 
@@ -45,15 +46,15 @@ extern crate alloc;
 // Re-export pallet items so that they can be accessed from the crate namespace.
 pub use pallet::*;
 
-// // FRAME pallets require their own "mock runtimes" to be able to run unit tests. This module
-// // contains a mock runtime specific for testing this pallet's functionality.
-// #[cfg(test)]
-// mod mock;
+// FRAME pallets require their own "mock runtimes" to be able to run unit tests. This module
+// contains a mock runtime specific for testing this pallet's functionality.
+#[cfg(test)]
+mod mock;
 
-// // This module contains the unit tests for this pallet.
-// // Learn about pallet unit testing here: https://docs.substrate.io/test/unit-testing/
-// #[cfg(test)]
-// mod tests;
+// This module contains the unit tests for this pallet.
+// Learn about pallet unit testing here: https://docs.substrate.io/test/unit-testing/
+#[cfg(test)]
+mod tests;
 
 // Every callable function or "dispatchable" a pallet exposes must have weight values that correctly
 // estimate a dispatchable's execution time. The benchmarking module is used to calculate weights
@@ -181,10 +182,10 @@ pub mod pallet {
         location: Location,
     }
 
-    /// A storage item for this pallet.
+    /// Storage for RSSI (Received Signal Strength Indicator) measurements.
     ///
-    /// In this template, we are declaring a storage item called `Something` that stores a single
-    /// `u32` value. Learn more about runtime storage here: <https://docs.substrate.io/build/runtime-storage/>
+    /// Maps (block_number, neighbor_account, reporting_account) -> RSSI value (i16)
+    /// This allows tracking signal strength measurements over time between node pairs.
     #[pallet::storage]
     pub type RssiData<T: Config> = StorageNMap<
         Key = (
@@ -195,10 +196,17 @@ pub mod pallet {
         Value = i16,
     >;
 
+    /// Maps Bluetooth MAC addresses to AccountIds.
+    ///
+    /// Used to look up which account owns a particular Bluetooth address,
+    /// enabling RSSI data to reference neighbors by their MAC addresses.
     #[pallet::storage]
     pub type AddressRegistrationData<T: Config> =
         StorageMap<Hasher = Blake2_128Concat, Key = [u8; 6], Value = T::AccountId>;
 
+    /// Maps AccountIds to their location data (Bluetooth address + GPS coordinates).
+    ///
+    /// Stores the registered location information for each node in the network.
     #[pallet::storage]
     pub type AccountData<T: Config> =
         StorageMap<Hasher = Blake2_128Concat, Key = T::AccountId, Value = LocationData>;
@@ -289,69 +297,35 @@ pub mod pallet {
     /// The [`weight`] macro is used to assign a weight to each call.
     #[pallet::call]
     impl<T: Config> Pallet<T> {
-        /// An example dispatchable that takes a single u32 value as a parameter, writes the value
-        /// to storage and emits an event.
+        /// Set the server configuration for a specific account's offchain worker.
+        /// This is stored in on-chain storage and is account-specific.
         ///
-        /// It checks that the _origin_ for this call is _Signed_ and returns a dispatch
-        /// error if it isn't. Learn more about origins here: <https://docs.substrate.io/build/origins/>
+        /// This allows each node to connect to a different server without recompiling.
+        ///
+        /// ## Parameters
+        /// - `origin`: Must be signed by the account
+        /// - `server_url`: The full server URL with port (e.g., "localhost:3000", "192.168.1.100:8080")
         #[pallet::call_index(0)]
-        #[pallet::weight(T::WeightInfo::do_something())]
-        pub fn publish_rssi_data(
-            origin: OriginFor<T>,
-            neighbor: T::AccountId,
-            rssi: i16,
-        ) -> DispatchResult {
-            // Check that the extrinsic was signed and get the signer.
+        #[pallet::weight(T::WeightInfo::set_server_config())]
+        pub fn set_server_config(origin: OriginFor<T>, server_url: Vec<u8>) -> DispatchResult {
+            // Check that the extrinsic was signed and get the signer
             let who = ensure_signed(origin)?;
 
-            // Check that origin account is registered.
-            ensure!(
-                AccountData::<T>::contains_key(&who),
-                Error::<T>::AccountNotRegistered
-            );
+            // Convert to BoundedVec
+            let bounded_url: BoundedVec<u8, ConstU32<256>> = server_url
+                .clone()
+                .try_into()
+                .map_err(|_| "Server URL too long (max 256 bytes)")?;
 
-            // Check that neighbor account is registered.
-            ensure!(
-                AccountData::<T>::contains_key(&neighbor),
-                Error::<T>::AccountNotRegistered
-            );
+            // Store in on-chain storage
+            ServerConfig::<T>::insert(who.clone(), bounded_url);
 
-            // Get account locations
-            let reporter_location = AccountData::<T>::get(&who).unwrap();
-            let neighbor_location = AccountData::<T>::get(&neighbor).unwrap();
-
-            // Convert them to normal units
-            let reporter_latitude = reporter_location.latitude as f64 / 1_000_000.0;
-            let reporter_longitude = reporter_location.longitude as f64 / 1_000_000.0;
-            let neighbor_latitude = neighbor_location.latitude as f64 / 1_000_000.0;
-            let neighbor_longitude = neighbor_location.longitude as f64 / 1_000_000.0;
-
-            use haversine_redux::Location;
-            let a = Location::new(reporter_latitude, reporter_longitude);
-            let b = Location::new(neighbor_latitude, neighbor_longitude);
-            let distance = a.kilometers_to(&b) * 1000.0; // convert km to meters
-
-            // Check that distance is within allowed maximum.
-            ensure!(
-                distance <= T::MaxDistanceMeters::get() as f64,
-                Error::<T>::ExceedsMaxDistance
-            );
-
-            // Get the current block number.
-            let block_number = frame_system::Pallet::<T>::block_number();
-
-            // Update storage.
-            RssiData::<T>::insert((block_number, neighbor.clone(), who.clone()), rssi);
-
-            // Emit an event.
-            Self::deposit_event(Event::RssiStored {
-                block_number,
-                neighbor,
+            log::info!(
+                "Server configuration updated for account {:?}: {}",
                 who,
-                rssi,
-            });
+                core::str::from_utf8(&server_url).unwrap_or("Invalid UTF-8")
+            );
 
-            // Return a successful `DispatchResult`
             Ok(())
         }
 
@@ -359,7 +333,7 @@ pub mod pallet {
         ///
         /// This is called by the offchain worker to store location coordinates.
         #[pallet::call_index(1)]
-        #[pallet::weight(T::WeightInfo::do_something())]
+        #[pallet::weight(T::WeightInfo::register_node())]
         pub fn register_node(
             origin: OriginFor<T>,
             address: [u8; 6],
@@ -404,38 +378,6 @@ pub mod pallet {
             Ok(())
         }
 
-        /// Set the server configuration for a specific account's offchain worker.
-        /// This is stored in on-chain storage and is account-specific.
-        ///
-        /// This allows each node to connect to a different server without recompiling.
-        ///
-        /// ## Parameters
-        /// - `origin`: Must be signed by the account
-        /// - `server_url`: The full server URL with port (e.g., "localhost:3000", "192.168.1.100:8080")
-        #[pallet::call_index(2)]
-        #[pallet::weight(T::WeightInfo::do_something())]
-        pub fn set_server_config(origin: OriginFor<T>, server_url: Vec<u8>) -> DispatchResult {
-            // Check that the extrinsic was signed and get the signer
-            let who = ensure_signed(origin)?;
-
-            // Convert to BoundedVec
-            let bounded_url: BoundedVec<u8, ConstU32<256>> = server_url
-                .clone()
-                .try_into()
-                .map_err(|_| "Server URL too long (max 256 bytes)")?;
-
-            // Store in on-chain storage
-            ServerConfig::<T>::insert(who.clone(), bounded_url);
-
-            log::info!(
-                "Server configuration updated for account {:?}: {}",
-                who,
-                core::str::from_utf8(&server_url).unwrap_or("Invalid UTF-8")
-            );
-
-            Ok(())
-        }
-
         /// Unregister a node from the network.
         ///
         /// This removes all associated data including location, Bluetooth address mapping,
@@ -443,8 +385,8 @@ pub mod pallet {
         ///
         /// ## Parameters
         /// - `origin`: Must be signed by the account that registered the node
-        #[pallet::call_index(3)]
-        #[pallet::weight(T::WeightInfo::do_something())]
+        #[pallet::call_index(2)]
+        #[pallet::weight(T::WeightInfo::unregister_node())]
         pub fn unregister_node(origin: OriginFor<T>) -> DispatchResult {
             // Check that the extrinsic was signed and get the signer
             let who = ensure_signed(origin)?;
@@ -488,8 +430,8 @@ pub mod pallet {
         /// - `address`: New Bluetooth address (6 bytes)
         /// - `latitude`: New latitude coordinate (multiply by 1_000_000 for precision)
         /// - `longitude`: New longitude coordinate (multiply by 1_000_000 for precision)
-        #[pallet::call_index(4)]
-        #[pallet::weight(T::WeightInfo::do_something())]
+        #[pallet::call_index(3)]
+        #[pallet::weight(T::WeightInfo::update_node_info())]
         pub fn update_node_info(
             origin: OriginFor<T>,
             address: [u8; 6],
@@ -547,6 +489,77 @@ pub mod pallet {
                 address
             );
 
+            Ok(())
+        }
+
+        /// Publish RSSI (signal strength) data for a neighboring node.
+        ///
+        /// This function stores RSSI measurements between nodes, validating that:
+        /// - Both the reporting node and neighbor are registered
+        /// - The distance between nodes is within the configured maximum
+        ///
+        /// ## Parameters
+        /// - `origin`: Must be signed by the reporting node's account
+        /// - `neighbor`: The AccountId of the neighboring node being measured
+        /// - `rssi`: The signal strength measurement (i16, typically negative dBm values)
+        #[pallet::call_index(4)]
+        #[pallet::weight(T::WeightInfo::publish_rssi_data())]
+        pub fn publish_rssi_data(
+            origin: OriginFor<T>,
+            neighbor: T::AccountId,
+            rssi: i16,
+        ) -> DispatchResult {
+            // Check that the extrinsic was signed and get the signer.
+            let who = ensure_signed(origin)?;
+
+            // Check that origin account is registered.
+            ensure!(
+                AccountData::<T>::contains_key(&who),
+                Error::<T>::AccountNotRegistered
+            );
+
+            // Check that neighbor account is registered.
+            ensure!(
+                AccountData::<T>::contains_key(&neighbor),
+                Error::<T>::AccountNotRegistered
+            );
+
+            // Get account locations
+            let reporter_location = AccountData::<T>::get(&who).unwrap();
+            let neighbor_location = AccountData::<T>::get(&neighbor).unwrap();
+
+            // Convert them to normal units
+            let reporter_latitude = reporter_location.latitude as f64 / 1_000_000.0;
+            let reporter_longitude = reporter_location.longitude as f64 / 1_000_000.0;
+            let neighbor_latitude = neighbor_location.latitude as f64 / 1_000_000.0;
+            let neighbor_longitude = neighbor_location.longitude as f64 / 1_000_000.0;
+
+            use haversine_redux::Location;
+            let a = Location::new(reporter_latitude, reporter_longitude);
+            let b = Location::new(neighbor_latitude, neighbor_longitude);
+            let distance = a.kilometers_to(&b) * 1000.0; // convert km to meters
+
+            // Check that distance is within allowed maximum.
+            ensure!(
+                distance <= T::MaxDistanceMeters::get() as f64,
+                Error::<T>::ExceedsMaxDistance
+            );
+
+            // Get the current block number.
+            let block_number = frame_system::Pallet::<T>::block_number();
+
+            // Update storage.
+            RssiData::<T>::insert((block_number, neighbor.clone(), who.clone()), rssi);
+
+            // Emit an event.
+            Self::deposit_event(Event::RssiStored {
+                block_number,
+                neighbor,
+                who,
+                rssi,
+            });
+
+            // Return a successful `DispatchResult`
             Ok(())
         }
     }

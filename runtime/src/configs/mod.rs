@@ -157,6 +157,12 @@ impl pallet_sudo::Config for Runtime {
     type WeightInfo = pallet_sudo::weights::SubstrateWeight<Runtime>;
 }
 
+// Server configuration constants
+parameter_types! {
+    pub const ServerUrl: &'static [u8] = b"localhost:3000";
+    pub const MaxDistanceMeters: u32 = 10;
+}
+
 /// Configure the pallet-template in pallets/template.
 impl pallet_template::Config for Runtime {
     type AuthorityId = pallet_template::crypto::TestAuthId;
@@ -164,10 +170,4 @@ impl pallet_template::Config for Runtime {
     type WeightInfo = pallet_template::weights::SubstrateWeight<Runtime>;
     type ServerUrl = ServerUrl;
     type MaxDistanceMeters = MaxDistanceMeters;
-}
-
-// Server configuration constants
-parameter_types! {
-    pub const ServerUrl: &'static [u8] = b"localhost:3000";
-    pub const MaxDistanceMeters: u32 = 10;
 }

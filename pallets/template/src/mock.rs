@@ -1,8 +1,9 @@
 use crate as pallet_template;
-use frame_support::derive_impl;
-use sp_runtime::BuildStorage;
+use frame_support::{derive_impl, parameter_types};
+use sp_runtime::{testing::TestXt, BuildStorage};
 
 type Block = frame_system::mocking::MockBlock<Test>;
+type Extrinsic = TestXt<RuntimeCall, ()>;
 
 #[frame_support::runtime]
 mod runtime {
@@ -33,11 +34,50 @@ mod runtime {
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
 impl frame_system::Config for Test {
     type Block = Block;
+    type AccountId = sp_runtime::AccountId32;
+    type Lookup = sp_runtime::traits::IdentityLookup<Self::AccountId>;
+}
+
+// Server configuration constants
+parameter_types! {
+    pub const ServerUrl: &'static [u8] = b"localhost:3000";
+    pub const MaxDistanceMeters: u32 = 10;
 }
 
 impl pallet_template::Config for Test {
+    type AuthorityId = pallet_template::crypto::TestAuthId;
     type RuntimeEvent = RuntimeEvent;
-    type WeightInfo = ();
+    type ServerUrl = ServerUrl;
+    type MaxDistanceMeters = MaxDistanceMeters;
+}
+
+impl frame_system::offchain::SigningTypes for Test {
+    type Public = <sp_runtime::MultiSignature as sp_runtime::traits::Verify>::Signer;
+    type Signature = sp_runtime::MultiSignature;
+}
+
+impl<LocalCall> frame_system::offchain::CreateTransactionBase<LocalCall> for Test
+where
+    RuntimeCall: From<LocalCall>,
+{
+    type Extrinsic = Extrinsic;
+    type RuntimeCall = RuntimeCall;
+}
+
+impl<LocalCall> frame_system::offchain::CreateSignedTransaction<LocalCall> for Test
+where
+    RuntimeCall: From<LocalCall>,
+{
+    fn create_signed_transaction<
+        C: frame_system::offchain::AppCrypto<Self::Public, Self::Signature>,
+    >(
+        call: RuntimeCall,
+        _public: Self::Public,
+        _account: <Test as frame_system::Config>::AccountId,
+        _nonce: <Test as frame_system::Config>::Nonce,
+    ) -> Option<Self::Extrinsic> {
+        Some(Extrinsic::new_bare(call))
+    }
 }
 
 // Build genesis storage according to the mock runtime.
