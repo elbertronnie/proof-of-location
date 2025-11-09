@@ -120,6 +120,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await
         .expect("Failed to get default adapter");
 
+    // Create shared state for RSSI data
+    let rssi_data: RssiData = Arc::new(Mutex::new(HashMap::new()));
+
+    // Create shared state for neighbor addresses
+    // Initialize with env variable if available (for backwards compatibility)
+    let initial_neighbors = init_neighbor_addresses_from_env();
+    let neighbor_addresses: NeighborAddresses = Arc::new(Mutex::new(initial_neighbors));
+
     // Get our Bluetooth address
     let our_bluetooth_address = bluetooth_address(&adapter).await;
     println!("Our Bluetooth address: {}", our_bluetooth_address);
@@ -129,47 +137,41 @@ async fn main() -> Result<(), Box<dyn Error>> {
         std::env::var("RPC_URL").unwrap_or_else(|_| "ws://127.0.0.1:9944".to_string());
     println!("Connecting to Substrate node at: {}", substrate_url);
 
-    let api = OnlineClient::<SubstrateConfig>::from_url(&substrate_url)
-        .await
-        .expect("Failed to connect to Substrate node");
-    println!("Connected to Substrate node successfully\n");
+    if let Ok(api) = OnlineClient::<SubstrateConfig>::from_url(&substrate_url).await {
+        println!("Connected to Substrate node successfully\n");
 
-    // Get max distance
-    let max_distance_meters = fetch_max_distance(&api);
-    println!(
-        "Max distance for neighbors: {} meters\n",
-        max_distance_meters
-    );
+        // Get max distance
+        let max_distance_meters = fetch_max_distance(&api);
+        println!(
+            "Max distance for neighbors: {} meters\n",
+            max_distance_meters
+        );
 
-    // Create shared state for RSSI data
-    let rssi_data: RssiData = Arc::new(Mutex::new(HashMap::new()));
-
-    // Create shared state for neighbor addresses
-    // Initialize with env variable if available (for backwards compatibility)
-    let initial_neighbors = init_neighbor_addresses_from_env();
-    let neighbor_addresses: NeighborAddresses = Arc::new(Mutex::new(initial_neighbors));
-
-    // Calculate neighbors once at startup
-    println!("Calculating initial neighbor list...");
-    match calculate_neighbors(&api, our_bluetooth_address, max_distance_meters).await {
-        Ok(neighbors) => {
-            let mut addr_lock = neighbor_addresses.lock().await;
-            *addr_lock = neighbors;
-            println!("✅ Initial neighbor count: {}", addr_lock.len());
+        // Calculate neighbors once at startup
+        println!("Calculating initial neighbor list...");
+        match calculate_neighbors(&api, our_bluetooth_address, max_distance_meters).await {
+            Ok(neighbors) => {
+                // Merge existing neighbors with new ones
+                let mut addr_lock = neighbor_addresses.lock().await;
+                (*addr_lock).extend(neighbors);
+                println!("✅ Initial neighbor count: {}", addr_lock.len());
+            }
+            Err(e) => {
+                eprintln!("⚠️  Failed to calculate initial neighbors: {}", e);
+            }
         }
-        Err(e) => {
-            eprintln!("⚠️  Failed to calculate initial neighbors: {}", e);
-        }
+
+        // Start listening for NodeRegistered events and auto-update neighbor list
+        start_neighbor_event_listener(
+            api.clone(),
+            our_bluetooth_address,
+            max_distance_meters,
+            Arc::clone(&neighbor_addresses),
+        )
+        .await;
+    } else {
+        println!("Connection to Substrate node refused: Neighbor list will not be updated");
     }
-
-    // Start listening for NodeRegistered events and auto-update neighbor list
-    start_neighbor_event_listener(
-        api.clone(),
-        our_bluetooth_address,
-        max_distance_meters,
-        Arc::clone(&neighbor_addresses),
-    )
-    .await;
 
     // Spawn background task for continuous Bluetooth scanning
     let adapter_clone = adapter.clone();
