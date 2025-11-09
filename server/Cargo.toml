@@ -13,6 +13,8 @@ bluer = { version = "0.17", features = ["bluetoothd"] }
 codec = { workspace = true, features = ["derive"] }
 dotenvy = { workspace = true }
 futures = { workspace = true }
+haversine-redux = { workspace = true }
+subxt = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 
 [package.metadata.cross.target.aarch64-unknown-linux-gnu]

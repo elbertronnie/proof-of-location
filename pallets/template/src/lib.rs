@@ -144,6 +144,7 @@ pub mod pallet {
         type ServerUrl: Get<&'static [u8]>;
 
         /// Maximum allowed distance between 2 nodes (in meters) to consider publishing RSSI data.
+        #[pallet::constant]
         type MaxDistanceMeters: Get<u32>;
     }
 
@@ -188,7 +189,7 @@ pub mod pallet {
     pub type RssiData<T: Config> = StorageNMap<
         Key = (
             NMapKey<Identity, BlockNumberFor<T>>,
-            NMapKey<Blake2_128Concat, T::AccountId>, // neighbour account
+            NMapKey<Blake2_128Concat, T::AccountId>, // neighbor account
             NMapKey<Blake2_128Concat, T::AccountId>, // reporting account
         ),
         Value = i16,
@@ -224,10 +225,10 @@ pub mod pallet {
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
-        /// A user has successfully published RSSI of its neighbour.
+        /// A user has successfully published RSSI of its neighbor.
         RssiStored {
             block_number: BlockNumberFor<T>,
-            neighbour: T::AccountId,
+            neighbor: T::AccountId,
             who: T::AccountId,
             rssi: i16,
         },
@@ -285,7 +286,7 @@ pub mod pallet {
         #[pallet::weight(T::WeightInfo::do_something())]
         pub fn publish_rssi_data(
             origin: OriginFor<T>,
-            neighbour: T::AccountId,
+            neighbor: T::AccountId,
             rssi: i16,
         ) -> DispatchResult {
             // Check that the extrinsic was signed and get the signer.
@@ -297,25 +298,25 @@ pub mod pallet {
                 Error::<T>::AccountNotRegistered
             );
 
-            // Check that neighbour account is registered.
+            // Check that neighbor account is registered.
             ensure!(
-                AccountData::<T>::contains_key(&neighbour),
+                AccountData::<T>::contains_key(&neighbor),
                 Error::<T>::AccountNotRegistered
             );
 
             // Get account locations
             let reporter_location = AccountData::<T>::get(&who).unwrap();
-            let neighbour_location = AccountData::<T>::get(&neighbour).unwrap();
+            let neighbor_location = AccountData::<T>::get(&neighbor).unwrap();
 
             // Convert them to normal units
             let reporter_latitude = reporter_location.latitude as f64 / 1_000_000.0;
             let reporter_longitude = reporter_location.longitude as f64 / 1_000_000.0;
-            let neighbour_latitude = neighbour_location.latitude as f64 / 1_000_000.0;
-            let neighbour_longitude = neighbour_location.longitude as f64 / 1_000_000.0;
+            let neighbor_latitude = neighbor_location.latitude as f64 / 1_000_000.0;
+            let neighbor_longitude = neighbor_location.longitude as f64 / 1_000_000.0;
 
             use haversine_redux::Location;
             let a = Location::new(reporter_latitude, reporter_longitude);
-            let b = Location::new(neighbour_latitude, neighbour_longitude);
+            let b = Location::new(neighbor_latitude, neighbor_longitude);
             let distance = a.kilometers_to(&b) * 1000.0; // convert km to meters
 
             // Check that distance is within allowed maximum.
@@ -328,12 +329,12 @@ pub mod pallet {
             let block_number = frame_system::Pallet::<T>::block_number();
 
             // Update storage.
-            RssiData::<T>::insert((block_number, neighbour.clone(), who.clone()), rssi);
+            RssiData::<T>::insert((block_number, neighbor.clone(), who.clone()), rssi);
 
             // Emit an event.
             Self::deposit_event(Event::RssiStored {
                 block_number,
-                neighbour,
+                neighbor,
                 who,
                 rssi,
             });
@@ -566,7 +567,7 @@ pub mod pallet {
                 };
 
                 let call = Call::publish_rssi_data {
-                    neighbour: account,
+                    neighbor: account,
                     rssi: device.rssi,
                 };
 

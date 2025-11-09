@@ -26,13 +26,17 @@ pub struct RssiResponse {
     pub devices: Vec<DeviceRssi>,
 }
 
-pub fn neighbour_addresses() -> HashSet<Address> {
+// Global shared state for neighbor addresses
+pub type NeighborAddresses = Arc<Mutex<HashSet<Address>>>;
+
+/// Initialize neighbor addresses from environment variable (for backwards compatibility/testing)
+pub fn init_neighbor_addresses_from_env() -> HashSet<Address> {
     std::env::var("BLUETOOTH_ADDRESSES")
         .unwrap_or_default()
         .split(',')
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-        .map(|s| s.parse().unwrap())
+        .filter_map(|s| s.parse().ok())
         .collect()
 }
 
@@ -88,19 +92,20 @@ async fn start_advertising(adapter: &Adapter) -> Result<(), Box<dyn Error>> {
     }
 }
 
-async fn scan_devices(adapter: &Adapter, rssi_data: RssiData) -> Result<(), Box<dyn Error>> {
+async fn scan_devices(
+    adapter: &Adapter,
+    rssi_data: RssiData,
+    neighbor_addresses: NeighborAddresses,
+) -> Result<(), Box<dyn Error>> {
     println!("Starting device scanning...");
 
-    // Get the list of target Bluetooth addresses to monitor
-    let target_set = neighbour_addresses();
-
-    if target_set.is_empty() {
-        return Err(
-            "No Bluetooth addresses configured in BLUETOOTH_ADDRESSES environment variable".into(),
-        );
+    // Initially check if we have any neighbors to monitor
+    let initial_count = neighbor_addresses.lock().await.len();
+    if initial_count == 0 {
+        println!("Warning: No neighbor addresses configured yet. Waiting for updates...");
+    } else {
+        println!("Monitoring {} device(s) initially", initial_count);
     }
-
-    println!("Monitoring {} device(s)", target_set.len());
 
     adapter
         .set_discovery_filter(DiscoveryFilter {
@@ -135,7 +140,8 @@ async fn scan_devices(adapter: &Adapter, rssi_data: RssiData) -> Result<(), Box<
                 match evt {
                     AdapterEvent::DeviceAdded(addr) => {
                         // Only process devices in our target list
-                        if !target_set.contains(&addr) {
+                        let is_neighbor = neighbor_addresses.lock().await.contains(&addr);
+                        if !is_neighbor {
                             continue;
                         }
 
@@ -213,6 +219,7 @@ async fn scan_devices(adapter: &Adapter, rssi_data: RssiData) -> Result<(), Box<
 pub async fn start_continuous_scan(
     adapter: Adapter,
     rssi_data: RssiData,
+    neighbor_addresses: NeighborAddresses,
 ) -> Result<(), Box<dyn Error>> {
     println!("Starting continuous Bluetooth operations...");
 
@@ -243,7 +250,7 @@ pub async fn start_continuous_scan(
     });
 
     // Run device scanning (this blocks indefinitely)
-    scan_devices(&adapter, rssi_data).await
+    scan_devices(&adapter, rssi_data, neighbor_addresses).await
 }
 
 pub async fn current_rssi(rssi_data: RssiData) -> Result<RssiResponse, Box<dyn Error>> {

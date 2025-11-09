@@ -10816,7 +10816,9 @@ dependencies = [
  "bluer",
  "dotenvy",
  "futures",
+ "haversine-redux",
  "parity-scale-codec",
+ "subxt",
  "tokio",
 ]
 

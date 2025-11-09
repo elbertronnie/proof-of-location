@@ -100,7 +100,7 @@ pub async fn fetch_all_rssi(
     // Fetch all account data
     let mut rssi_data = api.storage().at_latest().await?.iter(query).await?;
 
-    // Store results inside a vector
+    // Store results inside a HashMap
     let mut results = HashMap::new();
 
     // Collect all results
