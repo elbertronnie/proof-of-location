@@ -1,21 +1,33 @@
 use bluer::Address;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use subxt::{OnlineClient, SubstrateConfig};
 use tokio::sync::Mutex;
 
 use substrate::runtime_types::pallet_template::pallet::LocationData;
+use substrate::template::events::{NodeRegistered, NodeUnregistered, NodeUpdated};
 
 // This creates a complete, type-safe API for interacting with the runtime.
 #[subxt::subxt(runtime_metadata_path = "../metadata.scale")]
 pub mod substrate {}
 
-/// Calculate distance between two coordinates in meters
-pub fn distance(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> f64 {
-    use haversine_redux::Location;
-    let a = Location::new(a_lat, a_lon);
-    let b = Location::new(b_lat, b_lon);
-    a.kilometers_to(&b) * 1000.0 // convert kilometers to meters
+/// Cached location coordinates (latitude, longitude)
+/// Read once from environment variables and reused throughout the application
+static CACHED_LOCATION: OnceLock<(f64, f64)> = OnceLock::new();
+
+/// Get our location from cache or initialize from environment variables
+pub fn get_our_location() -> (f64, f64) {
+    *CACHED_LOCATION.get_or_init(|| {
+        let lat = std::env::var("LATITUDE")
+            .ok()
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(0.0);
+        let lon = std::env::var("LONGITUDE")
+            .ok()
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(0.0);
+        (lat, lon)
+    })
 }
 
 /// Fetch all location data from the chain
@@ -68,18 +80,8 @@ pub async fn calculate_neighbors(
 ) -> Result<HashSet<Address>, String> {
     let all_location_data = fetch_all_location_data(api).await?;
 
-    // Find our own location data by env variables LATITUDE and LONGITUDE
-    let our_lat = std::env::var("LATITUDE")
-        .ok()
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(0.0);
-    let our_lon = std::env::var("LONGITUDE")
-        .ok()
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(0.0);
-
-    let our_lat = our_lat / 1_000_000.0;
-    let our_lon = our_lon / 1_000_000.0;
+    // Get our cached location
+    let (our_lat, our_lon) = get_our_location();
 
     // Find all neighbors within max_distance_meters
     let mut neighbors = HashSet::new();
@@ -104,6 +106,85 @@ pub async fn calculate_neighbors(
     Ok(neighbors)
 }
 
+/// Calculate distance between two coordinates in meters
+fn distance(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> f64 {
+    use haversine_redux::Location;
+    let a = Location::new(a_lat, a_lon);
+    let b = Location::new(b_lat, b_lon);
+    a.kilometers_to(&b) * 1000.0 // convert kilometers to meters
+}
+
+/// Helper function to calculate distance from our cached location to a given coordinate
+fn calculate_distance_from_us(latitude: i64, longitude: i64) -> f64 {
+    let (our_lat, our_lon) = get_our_location();
+    let their_lat = latitude as f64 / 1_000_000.0;
+    let their_lon = longitude as f64 / 1_000_000.0;
+    distance(our_lat, our_lon, their_lat, their_lon)
+}
+
+/// Handle adding a node as a neighbor if it's within range
+async fn handle_node_in_range(
+    address: [u8; 6],
+    latitude: i64,
+    longitude: i64,
+    neighbor_addresses: &Arc<Mutex<HashSet<Address>>>,
+    max_distance_meters: u32,
+    event_type: &str,
+) {
+    let dist = calculate_distance_from_us(latitude, longitude);
+    let node_address = Address(address);
+
+    if dist <= max_distance_meters as f64 {
+        let mut addr_lock = neighbor_addresses.lock().await;
+        if addr_lock.insert(node_address) {
+            println!(
+                "✅ {} neighbor: {} (distance: {:.2}m) - Total neighbors: {}",
+                event_type,
+                node_address,
+                dist,
+                addr_lock.len()
+            );
+        } else if event_type == "Updated" {
+            println!(
+                "🔄 Updated neighbor location: {} (distance: {:.2}m)",
+                node_address, dist
+            );
+        }
+    } else {
+        println!(
+            "⏭️  Node {:?} is too far away ({:.2}m > {}m), not adding as neighbor",
+            address, dist, max_distance_meters
+        );
+    }
+}
+
+/// Handle removing a node from neighbors if it's out of range
+async fn handle_node_out_of_range(
+    address: [u8; 6],
+    latitude: i64,
+    longitude: i64,
+    neighbor_addresses: &Arc<Mutex<HashSet<Address>>>,
+    max_distance_meters: u32,
+) {
+    let dist = calculate_distance_from_us(latitude, longitude);
+    let node_address = Address(address);
+
+    if dist > max_distance_meters as f64 {
+        let mut addr_lock = neighbor_addresses.lock().await;
+        if addr_lock.remove(&node_address) {
+            println!(
+                "❌ Removed neighbor (moved too far): {} (distance: {:.2}m > {}m) - Total neighbors: {}",
+                node_address, dist, max_distance_meters, addr_lock.len()
+            );
+        } else {
+            println!(
+                "⏭️  Updated node is not a neighbor ({:.2}m > {}m)",
+                dist, max_distance_meters
+            );
+        }
+    }
+}
+
 /// Start listening to NodeRegistered events and update the neighbor list automatically
 /// This function spawns a background task that subscribes to blockchain events
 pub async fn start_neighbor_event_listener(
@@ -113,7 +194,7 @@ pub async fn start_neighbor_event_listener(
     neighbor_addresses: Arc<Mutex<HashSet<Address>>>,
 ) {
     tokio::spawn(async move {
-        println!("🎧 Starting NodeRegistered event listener...\n");
+        println!("🎧 Starting node event listener...\n");
 
         loop {
             // Subscribe to finalized blocks
@@ -139,7 +220,7 @@ pub async fn start_neighbor_event_listener(
                             }
                         };
 
-                        // Find and process NodeRegistered events using subxt generated API
+                        // Find and process node events using subxt generated API
                         for event_result in events.iter() {
                             let event = match event_result {
                                 Ok(event) => event,
@@ -149,11 +230,8 @@ pub async fn start_neighbor_event_listener(
                                 }
                             };
 
-                            // Try to decode as NodeRegistered event
-                            if let Ok(Some(node_registered)) =
-                                event.as_event::<substrate::template::events::NodeRegistered>()
-                            {
-                                // Skip if it's ourselves
+                            // Handle NodeRegistered event
+                            if let Ok(Some(node_registered)) = event.as_event::<NodeRegistered>() {
                                 if node_registered.address == our_bluetooth_address.0 {
                                     continue;
                                 }
@@ -163,38 +241,92 @@ pub async fn start_neighbor_event_listener(
                                     node_registered.address
                                 );
 
-                                // Get our location from environment
-                                let our_lat = std::env::var("LATITUDE")
-                                    .ok()
-                                    .and_then(|s| s.parse::<f64>().ok())
-                                    .unwrap_or(0.0)
-                                    / 1_000_000.0;
-                                let our_lon = std::env::var("LONGITUDE")
-                                    .ok()
-                                    .and_then(|s| s.parse::<f64>().ok())
-                                    .unwrap_or(0.0)
-                                    / 1_000_000.0;
+                                handle_node_in_range(
+                                    node_registered.address,
+                                    node_registered.latitude,
+                                    node_registered.longitude,
+                                    &neighbor_addresses,
+                                    max_distance_meters,
+                                    "Added new",
+                                )
+                                .await;
+                            }
 
-                                // Convert the new node's location
-                                let their_lat = node_registered.latitude as f64 / 1_000_000.0;
-                                let their_lon = node_registered.longitude as f64 / 1_000_000.0;
+                            // Handle NodeUnregistered event
+                            if let Ok(Some(node_unregistered)) =
+                                event.as_event::<NodeUnregistered>()
+                            {
+                                let removed_address = Address(node_unregistered.address);
 
-                                // Calculate distance to the new node
-                                let dist = distance(our_lat, our_lon, their_lat, their_lon);
+                                if removed_address == our_bluetooth_address {
+                                    continue;
+                                }
 
-                                // Check if this new node is a neighbor
-                                if dist <= max_distance_meters as f64 {
-                                    let new_neighbor_address = Address(node_registered.address);
-                                    let mut addr_lock = neighbor_addresses.lock().await;
+                                println!(
+                                    "🗑️  NodeUnregistered event detected for address: {:?}",
+                                    node_unregistered.address
+                                );
 
-                                    // Add to neighbors if not already present
-                                    if addr_lock.insert(new_neighbor_address) {
-                                        println!("✅ Added new neighbor: {} (distance: {:.2}m) - Total neighbors: {}", 
-                                            new_neighbor_address, dist, addr_lock.len());
-                                    }
+                                let mut addr_lock = neighbor_addresses.lock().await;
+                                if addr_lock.remove(&removed_address) {
+                                    println!(
+                                        "❌ Removed neighbor: {} - Total neighbors: {}",
+                                        removed_address,
+                                        addr_lock.len()
+                                    );
                                 } else {
-                                    println!("⏭️  Node {:?} is too far away ({:.2}m > {}m), not adding as neighbor",
-                                        node_registered.address, dist, max_distance_meters);
+                                    println!(
+                                        "⏭️  Node {:?} was not in neighbor list",
+                                        node_unregistered.address
+                                    );
+                                }
+                            }
+
+                            // Handle NodeUpdated event
+                            if let Ok(Some(node_updated)) = event.as_event::<NodeUpdated>() {
+                                let old_address = Address(node_updated.old_address);
+                                let new_address = Address(node_updated.new_address);
+
+                                if new_address == our_bluetooth_address {
+                                    continue;
+                                }
+
+                                println!(
+                                    "🔄 NodeUpdated event detected - Old: {:?}, New: {:?}",
+                                    node_updated.old_address, node_updated.new_address
+                                );
+
+                                // Remove old address if it changed
+                                if old_address != new_address {
+                                    let mut addr_lock = neighbor_addresses.lock().await;
+                                    addr_lock.remove(&old_address);
+                                }
+
+                                // Calculate distance and determine if node should be a neighbor
+                                let dist = calculate_distance_from_us(
+                                    node_updated.new_latitude,
+                                    node_updated.new_longitude,
+                                );
+
+                                if dist <= max_distance_meters as f64 {
+                                    handle_node_in_range(
+                                        node_updated.new_address,
+                                        node_updated.new_latitude,
+                                        node_updated.new_longitude,
+                                        &neighbor_addresses,
+                                        max_distance_meters,
+                                        "Updated",
+                                    )
+                                    .await;
+                                } else {
+                                    handle_node_out_of_range(
+                                        node_updated.new_address,
+                                        node_updated.new_latitude,
+                                        node_updated.new_longitude,
+                                        &neighbor_addresses,
+                                        max_distance_meters,
+                                    )
+                                    .await;
                                 }
                             }
                         }

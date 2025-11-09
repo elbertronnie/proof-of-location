@@ -21,7 +21,9 @@ use bluetooth::{
     bluetooth_address, current_rssi, init_neighbor_addresses_from_env, start_continuous_scan,
     NeighborAddresses, RssiData,
 };
-use neighbor::{calculate_neighbors, fetch_max_distance, start_neighbor_event_listener};
+use neighbor::{
+    calculate_neighbors, fetch_max_distance, get_our_location, start_neighbor_event_listener,
+};
 use subxt::{OnlineClient, SubstrateConfig};
 
 #[derive(Encode, Decode, Debug, Clone)]
@@ -82,17 +84,7 @@ async fn get_location(State(state): State<AppState>, req: Request) -> impl IntoR
 
     println!("📍 Location request from node: {}", node_id);
 
-    // Get latitude and longitude from environment variables
-    let latitude = std::env::var("LATITUDE")
-        .ok()
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(0.0);
-
-    let longitude = std::env::var("LONGITUDE")
-        .ok()
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(0.0);
-
+    let (latitude, longitude) = get_our_location();
     let address = bluetooth_address(&state.adapter).await;
 
     let response = LocationResponse {

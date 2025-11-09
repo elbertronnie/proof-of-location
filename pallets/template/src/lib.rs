@@ -239,6 +239,18 @@ pub mod pallet {
             latitude: i64,
             longitude: i64,
         },
+        /// A node has been unregistered.
+        NodeUnregistered { address: [u8; 6], who: T::AccountId },
+        /// A node's information has been updated.
+        NodeUpdated {
+            who: T::AccountId,
+            old_address: [u8; 6],
+            new_address: [u8; 6],
+            old_latitude: i64,
+            new_latitude: i64,
+            old_longitude: i64,
+            new_longitude: i64,
+        },
     }
 
     /// Errors that can be returned by this pallet.
@@ -423,6 +435,120 @@ pub mod pallet {
 
             Ok(())
         }
+
+        /// Unregister a node from the network.
+        ///
+        /// This removes all associated data including location, Bluetooth address mapping,
+        /// and server configuration. The caller must be the registered account.
+        ///
+        /// ## Parameters
+        /// - `origin`: Must be signed by the account that registered the node
+        #[pallet::call_index(3)]
+        #[pallet::weight(T::WeightInfo::do_something())]
+        pub fn unregister_node(origin: OriginFor<T>) -> DispatchResult {
+            // Check that the extrinsic was signed and get the signer
+            let who = ensure_signed(origin)?;
+
+            // Check that the account is registered
+            ensure!(
+                AccountData::<T>::contains_key(&who),
+                Error::<T>::AccountNotRegistered
+            );
+
+            // Get the location data to retrieve the Bluetooth address
+            let location_data = AccountData::<T>::get(&who).unwrap();
+            let bluetooth_address = location_data.address;
+
+            // Remove from all storage items
+            AccountData::<T>::remove(&who);
+            AddressRegistrationData::<T>::remove(bluetooth_address);
+            ServerConfig::<T>::remove(&who);
+
+            // Emit an event
+            Self::deposit_event(Event::NodeUnregistered {
+                address: bluetooth_address,
+                who,
+            });
+
+            log::info!(
+                "Node unregistered for account with Bluetooth address {:?}",
+                bluetooth_address
+            );
+
+            Ok(())
+        }
+
+        /// Update node information (location and/or Bluetooth address).
+        ///
+        /// This allows a registered node to update its location coordinates and/or Bluetooth address.
+        /// The node must already be registered.
+        ///
+        /// ## Parameters
+        /// - `origin`: Must be signed by the account that registered the node
+        /// - `address`: New Bluetooth address (6 bytes)
+        /// - `latitude`: New latitude coordinate (multiply by 1_000_000 for precision)
+        /// - `longitude`: New longitude coordinate (multiply by 1_000_000 for precision)
+        #[pallet::call_index(4)]
+        #[pallet::weight(T::WeightInfo::do_something())]
+        pub fn update_node_info(
+            origin: OriginFor<T>,
+            address: [u8; 6],
+            latitude: i64,
+            longitude: i64,
+        ) -> DispatchResult {
+            // Check that the extrinsic was signed and get the signer
+            let who = ensure_signed(origin)?;
+
+            // Check that the account is registered
+            ensure!(
+                AccountData::<T>::contains_key(&who),
+                Error::<T>::AccountNotRegistered
+            );
+
+            // Get the current location data to retrieve the old Bluetooth address
+            let old_location_data = AccountData::<T>::get(&who).unwrap();
+            let old_address = old_location_data.address;
+
+            // If the address is changing, ensure the new address is not already taken
+            if old_address != address {
+                ensure!(
+                    !AddressRegistrationData::<T>::contains_key(address),
+                    Error::<T>::BluetoothAddressAlreadyTaken
+                );
+
+                // Remove old address mapping and add new one
+                AddressRegistrationData::<T>::remove(old_address);
+                AddressRegistrationData::<T>::insert(address, who.clone());
+            }
+
+            // Create updated location data
+            let new_location_data = LocationData {
+                address,
+                latitude,
+                longitude,
+            };
+
+            // Update storage
+            AccountData::<T>::insert(who.clone(), new_location_data);
+
+            // Emit an event with old and new data
+            Self::deposit_event(Event::NodeUpdated {
+                who,
+                old_address,
+                new_address: address,
+                old_latitude: old_location_data.latitude,
+                new_latitude: latitude,
+                old_longitude: old_location_data.longitude,
+                new_longitude: longitude,
+            });
+
+            log::info!(
+                "Node information updated for account with new Bluetooth address {:?}",
+                address
+            );
+
+            Ok(())
+        }
     }
 
     #[pallet::hooks]
@@ -516,13 +642,6 @@ pub mod pallet {
 
         /// Fetch RSSI data from the bluetooth server and submit signed transactions
         fn fetch_rssi_and_submit(_block_number: BlockNumberFor<T>) -> Result<(), &'static str> {
-            // Check if this node has already registered using offchain local storage
-            let registration_key = b"pallet-template::node_registered";
-            let is_registered = sp_io::offchain::local_storage_get(
-                sp_core::offchain::StorageKind::PERSISTENT,
-                registration_key,
-            );
-
             // Get the signer
             let signer = Signer::<T, T::AuthorityId>::all_accounts();
             if !signer.can_sign() {
@@ -530,20 +649,25 @@ pub mod pallet {
                 return Err("No signing keys available");
             }
 
+            // Get the account ID from the signing key to check registration status
+            let keys = sp_io::crypto::sr25519_public_keys(crate::KEY_TYPE);
+            let account_id = if let Some(key) = keys.first() {
+                T::AccountId::decode(&mut &key.encode()[..])
+                    .map_err(|_| "Failed to decode account ID")?
+            } else {
+                return Err("No signing keys available");
+            };
+
+            // Check if this node has already registered by checking AccountData storage
+            let is_registered = AccountData::<T>::contains_key(&account_id);
+
             // If the node is not registered, first register it
-            if is_registered.is_none() {
+            if !is_registered {
                 let location_response = Self::fetch_location_from_server()
                     .map_err(|_| "Failed to fetch location data from server")?;
 
                 // Submit location data
                 Self::submit_location_data(location_response)?;
-
-                // Mark as registered in local storage
-                sp_io::offchain::local_storage_set(
-                    sp_core::offchain::StorageKind::PERSISTENT,
-                    registration_key,
-                    b"true",
-                );
 
                 log::info!("Node registration complete");
             }
