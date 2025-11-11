@@ -301,4 +301,14 @@ impl_runtime_apis! {
             crate::genesis_config_presets::preset_names()
         }
     }
+
+    impl pallet_template::rpc::TrustScoreApi<Block, AccountId> for Runtime {
+        fn calculate_trust_scores(target_block: u32) -> Vec<(AccountId, i16)> {
+            pallet_template::Pallet::<Runtime>::calculate_all_trust_scores(target_block.into())
+        }
+
+        fn calculate_trust_score(target_block: u32, account: AccountId) -> Option<i16> {
+            pallet_template::Pallet::<Runtime>::calculate_trust_score_for_account(target_block.into(), &account)
+        }
+    }
 }

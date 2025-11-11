@@ -14,6 +14,8 @@ use sp_api::ProvideRuntimeApi;
 use sp_block_builder::BlockBuilder;
 use sp_blockchain::{Error as BlockChainError, HeaderBackend, HeaderMetadata};
 
+use crate::rpc_trust_score;
+
 /// Full client dependencies.
 pub struct FullDeps<C, P> {
     /// The client instance to use.
@@ -32,17 +34,22 @@ where
     C: Send + Sync + 'static,
     C::Api: substrate_frame_rpc_system::AccountNonceApi<Block, AccountId, Nonce>,
     C::Api: pallet_transaction_payment_rpc::TransactionPaymentRuntimeApi<Block, Balance>,
+    C::Api: pallet_template::rpc::TrustScoreApi<Block, AccountId>,
     C::Api: BlockBuilder<Block>,
     P: TransactionPool + 'static,
 {
     use pallet_transaction_payment_rpc::{TransactionPayment, TransactionPaymentApiServer};
+    use rpc_trust_score::{TrustScore, TrustScoreApiServer};
     use substrate_frame_rpc_system::{System, SystemApiServer};
 
     let mut module = RpcModule::new(());
     let FullDeps { client, pool } = deps;
 
     module.merge(System::new(client.clone(), pool).into_rpc())?;
-    module.merge(TransactionPayment::new(client).into_rpc())?;
+    module.merge(TransactionPayment::new(client.clone()).into_rpc())?;
+
+    // Add trust score RPC
+    module.merge(TrustScore::new(client).into_rpc())?;
 
     // Extend this RPC with a custom API by using the following syntax.
     // `YourRpcStruct` should have a reference to a client, which is needed

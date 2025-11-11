@@ -12,7 +12,7 @@ members = [
     "runtime",
     "server",
     "simulator",
-    "trust-score",
+    "monitor",
 ]
 resolver = "2"
 

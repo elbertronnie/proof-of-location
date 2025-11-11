@@ -3,7 +3,7 @@ authors.workspace = true
 edition.workspace = true
 homepage.workspace = true
 license.workspace = true
-name = "trust-score"
+name = "monitor"
 repository.workspace = true
 version = "0.1.0"
 
@@ -12,7 +12,6 @@ dotenvy = { workspace = true }
 eframe = "0.29"
 egui = "0.29"
 egui_plot = "0.29"
-haversine-redux = { workspace = true }
 subxt = { workspace = true }
 subxt-signer = "0.38.1"
 tokio = { workspace = true, features = ["full"] }

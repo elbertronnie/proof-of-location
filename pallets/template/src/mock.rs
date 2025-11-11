@@ -47,6 +47,7 @@ parameter_types! {
 impl pallet_template::Config for Test {
     type AuthorityId = pallet_template::crypto::TestAuthId;
     type RuntimeEvent = RuntimeEvent;
+    type WeightInfo = ();
     type ServerUrl = ServerUrl;
     type MaxDistanceMeters = MaxDistanceMeters;
 }

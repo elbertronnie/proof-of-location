@@ -46,6 +46,9 @@ extern crate alloc;
 // Re-export pallet items so that they can be accessed from the crate namespace.
 pub use pallet::*;
 
+// Runtime API for RPC
+pub mod rpc;
+
 // FRAME pallets require their own "mock runtimes" to be able to run unit tests. This module
 // contains a mock runtime specific for testing this pallet's functionality.
 #[cfg(test)]
@@ -854,6 +857,117 @@ pub mod pallet {
                     Err("No signing account available")
                 }
             }
+        }
+
+        /// Calculate trimmed median error from RSSI values
+        /// Discards the highest 1/4 of values and returns the median of the remaining
+        pub fn trimmed_median_error(values: &mut [i16]) -> i16 {
+            if values.len() < 4 {
+                return i16::MAX;
+            }
+
+            // Convert to absolute values
+            values.iter_mut().for_each(|x| *x = x.abs());
+            values.sort_unstable();
+
+            let len = values.len();
+            let trim_end = (len * 3 / 4) as usize;
+            let trimmed = &values[..trim_end];
+
+            if trim_end % 2 == 1 {
+                trimmed[trim_end / 2]
+            } else {
+                let mid_upper = trimmed[trim_end / 2];
+                let mid_lower = trimmed[trim_end / 2 - 1];
+                (mid_upper + mid_lower) / 2
+            }
+        }
+
+        /// Estimate RSSI based on distance between two locations
+        /// Uses path loss model: RSSI = -60 - 3 * 10 * log10(distance)
+        pub fn estimate_rssi(a_lat: i64, a_lon: i64, b_lat: i64, b_lon: i64) -> i16 {
+            // Convert fixed-point coordinates back to f64
+            let a_lat_f = a_lat as f64 / 1_000_000.0;
+            let a_lon_f = a_lon as f64 / 1_000_000.0;
+            let b_lat_f = b_lat as f64 / 1_000_000.0;
+            let b_lon_f = b_lon as f64 / 1_000_000.0;
+
+            // Calculate haversine distance using haversine_redux
+            use haversine_redux::Location;
+            let a = Location::new(a_lat_f, a_lon_f);
+            let b = Location::new(b_lat_f, b_lon_f);
+            let dist = a.kilometers_to(&b) * 1000.0; // convert km to meters
+
+            // Apply path loss model
+            const PATH_LOSS_EXPONENT: f64 = 3.0;
+            let rssi = if dist > 0.0 {
+                -60.0 - PATH_LOSS_EXPONENT * 10.0 * libm::log10(dist)
+            } else {
+                0.0
+            };
+            rssi as i16
+        }
+
+        /// Calculate trust score for a specific account at a given block number
+        /// Returns the trimmed median error of RSSI measurements
+        pub fn calculate_trust_score_for_account(
+            block_number: BlockNumberFor<T>,
+            account: &T::AccountId,
+        ) -> Option<i16> {
+            // Get the location data for the account
+            let location_data = AccountData::<T>::get(account)?;
+
+            // Collect all RSSI errors for this account
+            let mut errors = Vec::new();
+
+            // Iterate through all possible reporters
+            // We need to check RssiData storage for entries with this account as neighbor
+            for (reporter_account, reporter_location) in AccountData::<T>::iter() {
+                // Skip self
+                if reporter_account == *account {
+                    continue;
+                }
+
+                // Check if there's RSSI data from this reporter about our account
+                if let Some(measured_rssi) =
+                    RssiData::<T>::get((block_number, account.clone(), reporter_account.clone()))
+                {
+                    // Calculate estimated RSSI based on location
+                    let estimated_rssi = Self::estimate_rssi(
+                        location_data.latitude,
+                        location_data.longitude,
+                        reporter_location.latitude,
+                        reporter_location.longitude,
+                    );
+
+                    // Calculate error
+                    let error = measured_rssi - estimated_rssi;
+                    errors.push(error);
+                }
+            }
+
+            if errors.is_empty() {
+                return None;
+            }
+
+            Some(Self::trimmed_median_error(&mut errors))
+        }
+
+        /// Calculate trust scores for all accounts at a given block number
+        /// Returns a vector of (AccountId, trust_score) tuples
+        pub fn calculate_all_trust_scores(
+            block_number: BlockNumberFor<T>,
+        ) -> Vec<(T::AccountId, i16)> {
+            let mut results = Vec::new();
+
+            for (account, _) in AccountData::<T>::iter() {
+                if let Some(score) = Self::calculate_trust_score_for_account(block_number, &account)
+                {
+                    results.push((account, score));
+                }
+            }
+
+            results
         }
     }
 }
