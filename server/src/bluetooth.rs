@@ -8,12 +8,18 @@ use futures::stream::StreamExt;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::error::Error;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use tokio::{task, time};
 
-const MAX_RSSI_QUEUE_SIZE: usize = 5;
+const MEDIAN_DURATION: Duration = Duration::from_secs(60); // 1 minute
 const BLUETOOTH_SERVICE_UUID: &str = "0000b4e7-0000-1000-8000-00805f9b34fb";
+
+#[derive(Debug, Clone)]
+pub struct RssiReading {
+    rssi: i16,
+    timestamp: Instant,
+}
 
 #[derive(Encode, Decode, Debug, Clone)]
 pub struct DeviceRssi {
@@ -62,8 +68,20 @@ fn calculate_median(values: &mut Vec<i16>) -> Option<i16> {
     }
 }
 
-// Global shared state for RSSI data
-pub type RssiData = Arc<Mutex<HashMap<Address, VecDeque<i16>>>>;
+// Global shared state for RSSI data with timestamps
+pub type RssiData = Arc<Mutex<HashMap<Address, VecDeque<RssiReading>>>>;
+
+/// Remove RSSI readings older than MEDIAN_DURATION
+fn remove_old_readings(deque: &mut VecDeque<RssiReading>) {
+    let now = Instant::now();
+    while let Some(reading) = deque.front() {
+        if now.duration_since(reading.timestamp) > MEDIAN_DURATION {
+            deque.pop_front();
+        } else {
+            break;
+        }
+    }
+}
 
 async fn start_advertising(adapter: &Adapter) -> Result<(), Box<dyn Error>> {
     println!("Starting BLE advertising...");
@@ -162,11 +180,14 @@ async fn scan_devices(
                             let mut data = rssi_data_clone.lock().await;
                             let deque = data.entry(addr).or_insert_with(VecDeque::new);
 
-                            // Keep only the last MAX_RSSI_QUEUE_SIZE values
-                            if deque.len() >= MAX_RSSI_QUEUE_SIZE {
-                                deque.pop_front();
-                            }
-                            deque.push_back(rssi);
+                            // Remove readings older than MEDIAN_DURATION
+                            remove_old_readings(deque);
+
+                            // Add new reading with timestamp
+                            deque.push_back(RssiReading {
+                                rssi,
+                                timestamp: Instant::now(),
+                            });
                         }
 
                         let task = tokio::spawn(async move {
@@ -180,13 +201,16 @@ async fn scan_devices(
                                             let mut data = rssi_data_clone.lock().await;
                                             let deque = data.entry(addr).or_insert_with(VecDeque::new);
 
-                                            // Keep only the last MAX_RSSI_QUEUE_SIZE values
-                                            if deque.len() >= MAX_RSSI_QUEUE_SIZE {
-                                                deque.pop_front();
-                                            }
-                                            deque.push_back(rssi);
+                                            // Remove readings older than MEDIAN_DURATION
+                                            remove_old_readings(deque);
 
-                                            println!("RSSI update for {}: {}", addr, rssi);
+                                            // Add new reading with timestamp
+                                            deque.push_back(RssiReading {
+                                                rssi,
+                                                timestamp: Instant::now(),
+                                            });
+
+                                            println!("RSSI update for {}: {} (queue size: {})", addr, rssi, deque.len());
                                         }
                                         _ => {}
                                     }
@@ -256,13 +280,16 @@ pub async fn start_continuous_scan(
 pub async fn current_rssi(rssi_data: RssiData) -> Result<RssiResponse, Box<dyn Error>> {
     println!("Calculating median RSSI from current data...");
 
-    let rssi_data_snapshot = rssi_data.lock().await.clone();
+    let mut rssi_data_locked = rssi_data.lock().await;
 
     // Build response with median RSSI values
     let mut devices = Vec::new();
-    for (address, rssi_deque) in rssi_data_snapshot {
+    for (address, rssi_deque) in rssi_data_locked.iter_mut() {
+        // Remove old readings before calculating median
+        remove_old_readings(rssi_deque);
+
         if !rssi_deque.is_empty() {
-            let mut rssi_values: Vec<i16> = rssi_deque.into_iter().collect();
+            let mut rssi_values: Vec<i16> = rssi_deque.iter().map(|r| r.rssi).collect();
             if let Some(median_rssi) = calculate_median(&mut rssi_values) {
                 devices.push(DeviceRssi {
                     address: address.0,
