@@ -3,7 +3,7 @@
 use super::*;
 
 #[allow(unused)]
-use crate::Pallet as Template;
+use crate::Pallet as ProofOfLocation;
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
 
@@ -51,7 +51,7 @@ mod benchmarks {
         let longitude = -122_419_415i64;
 
         // Setup: Register the node first
-        let _ = Template::<T>::register_node(
+        let _ = ProofOfLocation::<T>::register_node(
             RawOrigin::Signed(caller.clone()).into(),
             address,
             latitude,
@@ -77,7 +77,7 @@ mod benchmarks {
         let new_longitude = -74_005_974i64;
 
         // Setup: Register the node first
-        let _ = Template::<T>::register_node(
+        let _ = ProofOfLocation::<T>::register_node(
             RawOrigin::Signed(caller.clone()).into(),
             old_address,
             old_latitude,
@@ -113,13 +113,13 @@ mod benchmarks {
         let rssi = -65i16;
 
         // Setup: Register both nodes
-        let _ = Template::<T>::register_node(
+        let _ = ProofOfLocation::<T>::register_node(
             RawOrigin::Signed(caller.clone()).into(),
             address1,
             latitude1,
             longitude1,
         );
-        let _ = Template::<T>::register_node(
+        let _ = ProofOfLocation::<T>::register_node(
             RawOrigin::Signed(neighbor.clone()).into(),
             address2,
             latitude2,
@@ -133,5 +133,9 @@ mod benchmarks {
         // without knowing the block number, but the call should succeed)
     }
 
-    impl_benchmark_test_suite!(Template, crate::mock::new_test_ext(), crate::mock::Test);
+    impl_benchmark_test_suite!(
+        ProofOfLocation,
+        crate::mock::new_test_ext(),
+        crate::mock::Test
+    );
 }

@@ -7480,6 +7480,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-proof-of-location"
+version = "0.1.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "haversine-redux",
+ "libm",
+ "log",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-api",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
 name = "pallet-session"
 version = "40.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7513,24 +7531,6 @@ dependencies = [
  "frame-system",
  "parity-scale-codec",
  "scale-info",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-template"
-version = "0.1.0"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "haversine-redux",
- "libm",
- "log",
- "parity-scale-codec",
- "scale-info",
- "sp-api",
- "sp-core",
  "sp-io",
  "sp-runtime",
 ]
@@ -11253,7 +11253,7 @@ dependencies = [
  "frame-system",
  "futures",
  "jsonrpsee",
- "pallet-template",
+ "pallet-proof-of-location",
  "pallet-transaction-payment",
  "pallet-transaction-payment-rpc",
  "parity-scale-codec",
@@ -11301,8 +11301,8 @@ dependencies = [
  "pallet-aura",
  "pallet-balances",
  "pallet-grandpa",
+ "pallet-proof-of-location",
  "pallet-sudo",
- "pallet-template",
  "pallet-timestamp",
  "pallet-transaction-payment",
  "pallet-transaction-payment-rpc-runtime-api",

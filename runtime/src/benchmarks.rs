@@ -30,5 +30,5 @@ frame_benchmarking::define_benchmarks!(
     [pallet_balances, Balances]
     [pallet_timestamp, Timestamp]
     [pallet_sudo, Sudo]
-    [pallet_template, Template]
+    [pallet_proof_of_location, ProofOfLocation]
 );

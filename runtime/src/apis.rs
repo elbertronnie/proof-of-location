@@ -302,13 +302,13 @@ impl_runtime_apis! {
         }
     }
 
-    impl pallet_template::rpc::TrustScoreApi<Block, AccountId> for Runtime {
+    impl pallet_proof_of_location::rpc::TrustScoreApi<Block, AccountId> for Runtime {
         fn calculate_trust_scores(target_block: u32) -> Vec<(AccountId, i16)> {
-            pallet_template::Pallet::<Runtime>::calculate_all_trust_scores(target_block.into())
+            pallet_proof_of_location::Pallet::<Runtime>::calculate_all_trust_scores(target_block.into())
         }
 
         fn calculate_trust_score(target_block: u32, account: AccountId) -> Option<i16> {
-            pallet_template::Pallet::<Runtime>::calculate_trust_score_for_account(target_block.into(), &account)
+            pallet_proof_of_location::Pallet::<Runtime>::calculate_trust_score_for_account(target_block.into(), &account)
         }
     }
 }

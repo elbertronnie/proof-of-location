@@ -163,11 +163,11 @@ parameter_types! {
     pub const MaxDistanceMeters: u32 = 10;
 }
 
-/// Configure the pallet-template in pallets/template.
-impl pallet_template::Config for Runtime {
-    type AuthorityId = pallet_template::crypto::TestAuthId;
+/// Configure the pallet-proof-of-location.
+impl pallet_proof_of_location::Config for Runtime {
+    type AuthorityId = pallet_proof_of_location::crypto::TestAuthId;
     type RuntimeEvent = RuntimeEvent;
-    type WeightInfo = pallet_template::weights::SubstrateWeight<Runtime>;
+    type WeightInfo = pallet_proof_of_location::weights::SubstrateWeight<Runtime>;
     type ServerUrl = ServerUrl;
     type MaxDistanceMeters = MaxDistanceMeters;
 }

@@ -44,7 +44,7 @@ if ! command -v polkadot-js-api &> /dev/null; then
     echo -e "${YELLOW}Alternatively, use Polkadot.js Apps:${NC}"
     echo "1. Navigate to the Polkadot.js Apps interface for your node"
     echo "2. Go to Developer -> Extrinsics"
-    echo "3. Select: template -> setServerConfig(server_url)"
+    echo "3. Select: proofOfLocation -> setServerConfig(server_url)"
     echo "4. Enter:"
     echo "   - server_url: 0x$SERVER_URL_HEX"
     echo "5. Submit with the desired account (e.g., Alice)"
@@ -57,7 +57,7 @@ echo -e "${GREEN}Submitting transaction...${NC}"
 polkadot-js-api \
     --ws "$RPC_URL" \
     --seed "$ACCOUNT" \
-    tx.template.setServerConfig \
+    tx.proofOfLocation.setServerConfig \
     "0x$SERVER_URL_HEX"
 
 if [ $? -eq 0 ]; then

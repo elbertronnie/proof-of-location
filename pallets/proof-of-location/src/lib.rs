@@ -35,7 +35,7 @@
 //! - **Dispatchable functions**: set_server_config, register_node, unregister_node, update_node_info, publish_rssi_data
 //! - **Offchain worker**: Automatic location registration and RSSI data submission
 //!
-//! Run `cargo doc --package pallet-template --open` to view this pallet's documentation.
+//! Run `cargo doc --package pallet-proof-of-location --open` to view this pallet's documentation.
 
 // We make sure this pallet uses `no_std` for compiling to Wasm.
 #![cfg_attr(not(feature = "std"), no_std)]

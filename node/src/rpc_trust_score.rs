@@ -8,7 +8,7 @@ use jsonrpsee::{
     proc_macros::rpc,
     types::ErrorObjectOwned,
 };
-use pallet_template::rpc::TrustScoreApi as TrustScoreRuntimeApi;
+use pallet_proof_of_location::rpc::TrustScoreApi as TrustScoreRuntimeApi;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;

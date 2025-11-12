@@ -4,8 +4,8 @@ use std::sync::{Arc, OnceLock};
 use subxt::{OnlineClient, SubstrateConfig};
 use tokio::sync::Mutex;
 
-use substrate::runtime_types::pallet_template::pallet::LocationData;
-use substrate::template::events::{NodeRegistered, NodeUnregistered, NodeUpdated};
+use substrate::proof_of_location::events::{NodeRegistered, NodeUnregistered, NodeUpdated};
+use substrate::runtime_types::pallet_proof_of_location::pallet::LocationData;
 
 // This creates a complete, type-safe API for interacting with the runtime.
 #[subxt::subxt(runtime_metadata_path = "../metadata.scale")]
@@ -35,7 +35,7 @@ pub async fn fetch_all_location_data(
     api: &OnlineClient<SubstrateConfig>,
 ) -> Result<HashMap<[u8; 32], LocationData>, String> {
     // Use the generated API to access the storage
-    let query = substrate::storage().template().account_data_iter();
+    let query = substrate::storage().proof_of_location().account_data_iter();
 
     // Fetch all account data
     let mut account_data = api
@@ -67,7 +67,9 @@ pub async fn fetch_all_location_data(
 /// Fetch the MaxDistanceMeters constant from the runtime
 /// Falls back to default of 10 meters
 pub fn fetch_max_distance(api: &OnlineClient<SubstrateConfig>) -> u32 {
-    let query = substrate::constants().template().max_distance_meters();
+    let query = substrate::constants()
+        .proof_of_location()
+        .max_distance_meters();
     api.constants().at(&query).unwrap_or(10) // Default value matching the runtime constant
 }
 

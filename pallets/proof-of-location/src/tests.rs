@@ -14,7 +14,7 @@ fn set_server_config_works() {
         let server_url = b"192.168.1.100:8080".to_vec();
 
         // Set server configuration
-        assert_ok!(Template::set_server_config(
+        assert_ok!(ProofOfLocation::set_server_config(
             RuntimeOrigin::signed(account.clone()),
             server_url.clone()
         ));
@@ -35,7 +35,7 @@ fn register_node_works() {
         let longitude = -122_419_415; // -122.419415 * 1_000_000
 
         // Register node
-        assert_ok!(Template::register_node(
+        assert_ok!(ProofOfLocation::register_node(
             RuntimeOrigin::signed(account.clone()),
             address,
             latitude,
@@ -75,7 +75,7 @@ fn register_node_fails_with_duplicate_address() {
         let longitude = -122_419_415;
 
         // First registration succeeds
-        assert_ok!(Template::register_node(
+        assert_ok!(ProofOfLocation::register_node(
             RuntimeOrigin::signed(account1.clone()),
             address,
             latitude,
@@ -84,7 +84,7 @@ fn register_node_fails_with_duplicate_address() {
 
         // Second registration with same address fails
         assert_noop!(
-            Template::register_node(
+            ProofOfLocation::register_node(
                 RuntimeOrigin::signed(account2.clone()),
                 address,
                 latitude,
@@ -105,7 +105,7 @@ fn register_node_fails_with_duplicate_account() {
         let longitude = -122_419_415;
 
         // First registration succeeds
-        assert_ok!(Template::register_node(
+        assert_ok!(ProofOfLocation::register_node(
             RuntimeOrigin::signed(account.clone()),
             address1,
             latitude,
@@ -114,7 +114,7 @@ fn register_node_fails_with_duplicate_account() {
 
         // Second registration with same account fails
         assert_noop!(
-            Template::register_node(
+            ProofOfLocation::register_node(
                 RuntimeOrigin::signed(account.clone()),
                 address2,
                 latitude,
@@ -134,7 +134,7 @@ fn unregister_node_works() {
         let server_url = b"localhost:3000".to_vec();
 
         // Register node
-        assert_ok!(Template::register_node(
+        assert_ok!(ProofOfLocation::register_node(
             RuntimeOrigin::signed(account.clone()),
             address,
             37_774_929,
@@ -142,13 +142,13 @@ fn unregister_node_works() {
         ));
 
         // Set server config
-        assert_ok!(Template::set_server_config(
+        assert_ok!(ProofOfLocation::set_server_config(
             RuntimeOrigin::signed(account.clone()),
             server_url
         ));
 
         // Unregister node
-        assert_ok!(Template::unregister_node(RuntimeOrigin::signed(
+        assert_ok!(ProofOfLocation::unregister_node(RuntimeOrigin::signed(
             account.clone()
         )));
 
@@ -175,7 +175,7 @@ fn unregister_node_fails_if_not_registered() {
 
         // Try to unregister without registering first
         assert_noop!(
-            Template::unregister_node(RuntimeOrigin::signed(account.clone())),
+            ProofOfLocation::unregister_node(RuntimeOrigin::signed(account.clone())),
             Error::<Test>::AccountNotRegistered
         );
     });
@@ -194,7 +194,7 @@ fn update_node_info_works() {
         let new_longitude = -74_005_974;
 
         // Register node
-        assert_ok!(Template::register_node(
+        assert_ok!(ProofOfLocation::register_node(
             RuntimeOrigin::signed(account.clone()),
             old_address,
             old_latitude,
@@ -204,7 +204,7 @@ fn update_node_info_works() {
         System::set_block_number(2);
 
         // Update node info
-        assert_ok!(Template::update_node_info(
+        assert_ok!(ProofOfLocation::update_node_info(
             RuntimeOrigin::signed(account.clone()),
             new_address,
             new_latitude,
@@ -248,7 +248,7 @@ fn update_node_info_fails_if_not_registered() {
 
         // Try to update without registering first
         assert_noop!(
-            Template::update_node_info(
+            ProofOfLocation::update_node_info(
                 RuntimeOrigin::signed(account.clone()),
                 address,
                 37_774_929,
@@ -268,14 +268,14 @@ fn update_node_info_fails_if_new_address_taken() {
         let address2 = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF];
 
         // Register both nodes
-        assert_ok!(Template::register_node(
+        assert_ok!(ProofOfLocation::register_node(
             RuntimeOrigin::signed(account1.clone()),
             address1,
             37_774_929,
             -122_419_415
         ));
 
-        assert_ok!(Template::register_node(
+        assert_ok!(ProofOfLocation::register_node(
             RuntimeOrigin::signed(account2.clone()),
             address2,
             37_774_930,
@@ -284,7 +284,7 @@ fn update_node_info_fails_if_new_address_taken() {
 
         // Try to update account1 to use address2 (already taken)
         assert_noop!(
-            Template::update_node_info(
+            ProofOfLocation::update_node_info(
                 RuntimeOrigin::signed(account1.clone()),
                 address2,
                 37_774_931,
@@ -311,14 +311,14 @@ fn publish_rssi_data_works() {
         let rssi = -65i16;
 
         // Register both nodes
-        assert_ok!(Template::register_node(
+        assert_ok!(ProofOfLocation::register_node(
             RuntimeOrigin::signed(account1.clone()),
             address1,
             latitude1,
             longitude1
         ));
 
-        assert_ok!(Template::register_node(
+        assert_ok!(ProofOfLocation::register_node(
             RuntimeOrigin::signed(account2.clone()),
             address2,
             latitude2,
@@ -326,7 +326,7 @@ fn publish_rssi_data_works() {
         ));
 
         // Publish RSSI data
-        assert_ok!(Template::publish_rssi_data(
+        assert_ok!(ProofOfLocation::publish_rssi_data(
             RuntimeOrigin::signed(account1.clone()),
             account2.clone(),
             rssi
@@ -353,7 +353,7 @@ fn publish_rssi_data_fails_if_reporter_not_registered() {
         let address2 = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF];
 
         // Only register account2
-        assert_ok!(Template::register_node(
+        assert_ok!(ProofOfLocation::register_node(
             RuntimeOrigin::signed(account2.clone()),
             address2,
             37_774_929,
@@ -362,7 +362,11 @@ fn publish_rssi_data_fails_if_reporter_not_registered() {
 
         // Try to publish RSSI from unregistered account1
         assert_noop!(
-            Template::publish_rssi_data(RuntimeOrigin::signed(account1.clone()), account2, -65),
+            ProofOfLocation::publish_rssi_data(
+                RuntimeOrigin::signed(account1.clone()),
+                account2,
+                -65
+            ),
             Error::<Test>::AccountNotRegistered
         );
     });
@@ -376,7 +380,7 @@ fn publish_rssi_data_fails_if_neighbor_not_registered() {
         let address1 = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
 
         // Only register account1
-        assert_ok!(Template::register_node(
+        assert_ok!(ProofOfLocation::register_node(
             RuntimeOrigin::signed(account1.clone()),
             address1,
             37_774_929,
@@ -385,7 +389,11 @@ fn publish_rssi_data_fails_if_neighbor_not_registered() {
 
         // Try to publish RSSI for unregistered account2
         assert_noop!(
-            Template::publish_rssi_data(RuntimeOrigin::signed(account1.clone()), account2, -65),
+            ProofOfLocation::publish_rssi_data(
+                RuntimeOrigin::signed(account1.clone()),
+                account2,
+                -65
+            ),
             Error::<Test>::AccountNotRegistered
         );
     });
@@ -405,14 +413,14 @@ fn publish_rssi_data_fails_if_distance_exceeds_maximum() {
         let longitude2 = -74_005_974;
 
         // Register both nodes
-        assert_ok!(Template::register_node(
+        assert_ok!(ProofOfLocation::register_node(
             RuntimeOrigin::signed(account1.clone()),
             address1,
             latitude1,
             longitude1
         ));
 
-        assert_ok!(Template::register_node(
+        assert_ok!(ProofOfLocation::register_node(
             RuntimeOrigin::signed(account2.clone()),
             address2,
             latitude2,
@@ -421,7 +429,11 @@ fn publish_rssi_data_fails_if_distance_exceeds_maximum() {
 
         // Try to publish RSSI data (should fail due to distance)
         assert_noop!(
-            Template::publish_rssi_data(RuntimeOrigin::signed(account1.clone()), account2, -65),
+            ProofOfLocation::publish_rssi_data(
+                RuntimeOrigin::signed(account1.clone()),
+                account2,
+                -65
+            ),
             Error::<Test>::ExceedsMaxDistance
         );
     });

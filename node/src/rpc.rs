@@ -34,7 +34,7 @@ where
     C: Send + Sync + 'static,
     C::Api: substrate_frame_rpc_system::AccountNonceApi<Block, AccountId, Nonce>,
     C::Api: pallet_transaction_payment_rpc::TransactionPaymentRuntimeApi<Block, Balance>,
-    C::Api: pallet_template::rpc::TrustScoreApi<Block, AccountId>,
+    C::Api: pallet_proof_of_location::rpc::TrustScoreApi<Block, AccountId>,
     C::Api: BlockBuilder<Block>,
     P: TransactionPool + 'static,
 {

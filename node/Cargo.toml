@@ -25,8 +25,8 @@ frame-system.default-features = true
 frame-system.workspace = true
 futures = { features = ["thread-pool"], workspace = true }
 jsonrpsee = { features = ["server"], workspace = true }
-pallet-template.default-features = true
-pallet-template.workspace = true
+pallet-proof-of-location.default-features = true
+pallet-proof-of-location.workspace = true
 pallet-transaction-payment.default-features = true
 pallet-transaction-payment.workspace = true
 pallet-transaction-payment-rpc.default-features = true

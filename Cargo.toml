@@ -8,7 +8,7 @@ repository = "https://github.com/paritytech/polkadot-sdk-solochain-template.git"
 [workspace]
 members = [
     "node",
-    "pallets/template",
+    "pallets/proof-of-location",
     "runtime",
     "server",
     "simulator",
@@ -36,8 +36,8 @@ jsonrpsee = { version = "0.24.3" }
 pallet-aura = { version = "39.0.0", default-features = false }
 pallet-balances = { version = "41.1.0", default-features = false }
 pallet-grandpa = { version = "40.0.0", default-features = false }
+pallet-proof-of-location = { path = "./pallets/proof-of-location", default-features = false }
 pallet-sudo = { version = "40.0.0", default-features = false }
-pallet-template = { path = "./pallets/template", default-features = false }
 pallet-timestamp = { version = "39.0.0", default-features = false }
 pallet-transaction-payment = { version = "40.0.0", default-features = false }
 pallet-transaction-payment-rpc = { version = "43.0.0", default-features = false }

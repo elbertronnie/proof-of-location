@@ -1,4 +1,4 @@
-use crate as pallet_template;
+use crate as pallet_proof_of_location;
 use frame_support::{derive_impl, parameter_types};
 use sp_runtime::{testing::TestXt, BuildStorage};
 
@@ -28,7 +28,7 @@ mod runtime {
     pub type System = frame_system::Pallet<Test>;
 
     #[runtime::pallet_index(1)]
-    pub type Template = pallet_template::Pallet<Test>;
+    pub type ProofOfLocation = pallet_proof_of_location::Pallet<Test>;
 }
 
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
@@ -44,8 +44,8 @@ parameter_types! {
     pub const MaxDistanceMeters: u32 = 10;
 }
 
-impl pallet_template::Config for Test {
-    type AuthorityId = pallet_template::crypto::TestAuthId;
+impl pallet_proof_of_location::Config for Test {
+    type AuthorityId = pallet_proof_of_location::crypto::TestAuthId;
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type ServerUrl = ServerUrl;
