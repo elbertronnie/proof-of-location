@@ -5,7 +5,7 @@ use subxt::{OnlineClient, SubstrateConfig};
 use tokio::sync::Mutex;
 
 use substrate::proof_of_location::events::{NodeRegistered, NodeUnregistered, NodeUpdated};
-use substrate::runtime_types::pallet_proof_of_location::pallet::LocationData;
+use substrate::runtime_types::pallet_proof_of_location::util::LocationData;
 
 // This creates a complete, type-safe API for interacting with the runtime.
 #[subxt::subxt(runtime_metadata_path = "../metadata.scale")]
@@ -64,28 +64,28 @@ pub async fn fetch_all_location_data(
     Ok(results)
 }
 
-/// Fetch the MaxDistanceMeters constant from the runtime
-/// Falls back to default of 10 meters
+/// Fetch the MaxDistance constant from the runtime.
+///
+/// Falls back to default of 10 meters.
 pub fn fetch_max_distance(api: &OnlineClient<SubstrateConfig>) -> u32 {
-    let query = substrate::constants()
-        .proof_of_location()
-        .max_distance_meters();
+    let query = substrate::constants().proof_of_location().max_distance();
     api.constants().at(&query).unwrap_or(10) // Default value matching the runtime constant
 }
 
 /// Calculate which nodes are neighbors based on distance from our location
-/// A neighbor is defined as a node whose distance from us is less than max_distance_meters
+///
+/// A neighbor is defined as a node whose distance from us is less than max_distance
 pub async fn calculate_neighbors(
     api: &OnlineClient<SubstrateConfig>,
     our_bluetooth_address: Address,
-    max_distance_meters: u32,
+    max_distance: u32,
 ) -> Result<HashSet<Address>, String> {
     let all_location_data = fetch_all_location_data(api).await?;
 
     // Get our cached location
     let (our_lat, our_lon) = get_our_location();
 
-    // Find all neighbors within max_distance_meters
+    // Find all neighbors within max_distance
     let mut neighbors = HashSet::new();
 
     for location_data in all_location_data.values() {
@@ -99,7 +99,7 @@ pub async fn calculate_neighbors(
 
         let dist = distance(our_lat, our_lon, their_lat, their_lon);
 
-        if dist <= max_distance_meters as f64 {
+        if dist <= max_distance as f64 {
             // Convert [u8; 6] to Address
             neighbors.insert(Address(location_data.address));
         }
@@ -130,13 +130,13 @@ async fn handle_node_in_range(
     latitude: i64,
     longitude: i64,
     neighbor_addresses: &Arc<Mutex<HashSet<Address>>>,
-    max_distance_meters: u32,
+    max_distance: u32,
     event_type: &str,
 ) {
     let dist = calculate_distance_from_us(latitude, longitude);
     let node_address = Address(address);
 
-    if dist <= max_distance_meters as f64 {
+    if dist <= max_distance as f64 {
         let mut addr_lock = neighbor_addresses.lock().await;
         if addr_lock.insert(node_address) {
             println!(
@@ -155,7 +155,7 @@ async fn handle_node_in_range(
     } else {
         println!(
             "⏭️  Node {:?} is too far away ({:.2}m > {}m), not adding as neighbor",
-            address, dist, max_distance_meters
+            address, dist, max_distance
         );
     }
 }
@@ -166,22 +166,22 @@ async fn handle_node_out_of_range(
     latitude: i64,
     longitude: i64,
     neighbor_addresses: &Arc<Mutex<HashSet<Address>>>,
-    max_distance_meters: u32,
+    max_distance: u32,
 ) {
     let dist = calculate_distance_from_us(latitude, longitude);
     let node_address = Address(address);
 
-    if dist > max_distance_meters as f64 {
+    if dist > max_distance as f64 {
         let mut addr_lock = neighbor_addresses.lock().await;
         if addr_lock.remove(&node_address) {
             println!(
                 "❌ Removed neighbor (moved too far): {} (distance: {:.2}m > {}m) - Total neighbors: {}",
-                node_address, dist, max_distance_meters, addr_lock.len()
+                node_address, dist, max_distance, addr_lock.len()
             );
         } else {
             println!(
                 "⏭️  Updated node is not a neighbor ({:.2}m > {}m)",
-                dist, max_distance_meters
+                dist, max_distance
             );
         }
     }
@@ -192,7 +192,7 @@ async fn handle_node_out_of_range(
 pub async fn start_neighbor_event_listener(
     api: OnlineClient<SubstrateConfig>,
     our_bluetooth_address: Address,
-    max_distance_meters: u32,
+    max_distance: u32,
     neighbor_addresses: Arc<Mutex<HashSet<Address>>>,
 ) {
     tokio::spawn(async move {
@@ -248,7 +248,7 @@ pub async fn start_neighbor_event_listener(
                                     node_registered.latitude,
                                     node_registered.longitude,
                                     &neighbor_addresses,
-                                    max_distance_meters,
+                                    max_distance,
                                     "Added new",
                                 )
                                 .await;
@@ -310,13 +310,13 @@ pub async fn start_neighbor_event_listener(
                                     node_updated.new_longitude,
                                 );
 
-                                if dist <= max_distance_meters as f64 {
+                                if dist <= max_distance as f64 {
                                     handle_node_in_range(
                                         node_updated.new_address,
                                         node_updated.new_latitude,
                                         node_updated.new_longitude,
                                         &neighbor_addresses,
-                                        max_distance_meters,
+                                        max_distance,
                                         "Updated",
                                     )
                                     .await;
@@ -326,7 +326,7 @@ pub async fn start_neighbor_event_listener(
                                         node_updated.new_latitude,
                                         node_updated.new_longitude,
                                         &neighbor_addresses,
-                                        max_distance_meters,
+                                        max_distance,
                                     )
                                     .await;
                                 }

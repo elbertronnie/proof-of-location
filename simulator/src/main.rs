@@ -36,7 +36,8 @@ const EVE_BLUETOOTH_ADDRESS: &str = "AA:BB:CC:DD:EE:05";
 const EVE_LATITUDE: f64 = 0.0;
 const EVE_LONGITUDE: f64 = -0.00001;
 
-const PATH_LOSS_EXPONENT: f64 = 3.0;
+const REFERENCE_RSSI: f64 = -48.0;
+const PATH_LOSS_EXPONENT: f64 = 4.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AlicePosition {
@@ -74,7 +75,7 @@ fn estimate_rssi(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> i16 {
     let b = Location::new(b_lat, b_lon);
     let dist = a.kilometers_to(&b) * 1000.0; // convert kilometers to meters
     let rssi = if dist != 0.0 {
-        -60.0 - PATH_LOSS_EXPONENT * 10.0 * dist.log10()
+        REFERENCE_RSSI - PATH_LOSS_EXPONENT * 10.0 * dist.log10()
     } else {
         0.0
     };

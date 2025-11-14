@@ -158,14 +158,25 @@ pub mod pallet {
         /// A type representing the weights required by the dispatchables of this pallet.
         type WeightInfo: WeightInfo;
 
-        /// Default server URL with port for fetching data (used if not set via set_server_config)
+        /// Default server URL with port for fetching data (used if not set via set_server_config).
+        ///
         /// Format: "hostname:port" or "ip:port" (e.g., "localhost:3000")
         #[pallet::constant]
         type ServerUrl: Get<&'static [u8]>;
 
+        /// Reference RSSI value at 1 meter distance.
+        #[pallet::constant]
+        type ReferenceRssi: Get<i16>;
+
+        /// Path loss exponent multiplied by 10.
+        ///
+        /// Multiplied by 10 to allow fractional values (e.g., 4.0 -> 40).
+        #[pallet::constant]
+        type PathLossExponent: Get<u8>;
+
         /// Maximum allowed distance between 2 nodes (in meters) to consider publishing RSSI data.
         #[pallet::constant]
-        type MaxDistanceMeters: Get<u32>;
+        type MaxDistance: Get<u32>;
     }
 
     /// Storage for RSSI (Received Signal Strength Indicator) measurements.
@@ -259,5 +270,4 @@ pub mod pallet {
         /// Distance between nodes exceeds maximum allowed distance
         ExceedsMaxDistance,
     }
-
 }

@@ -41,7 +41,9 @@ impl frame_system::Config for Test {
 // Server configuration constants
 parameter_types! {
     pub const ServerUrl: &'static [u8] = b"localhost:3000";
-    pub const MaxDistanceMeters: u32 = 10;
+    pub const ReferenceRssi: i16 = -48;
+    pub const PathLossExponent: u8 = 40;
+    pub const MaxDistance: u32 = 10;
 }
 
 impl pallet_proof_of_location::Config for Test {
@@ -49,7 +51,9 @@ impl pallet_proof_of_location::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type ServerUrl = ServerUrl;
-    type MaxDistanceMeters = MaxDistanceMeters;
+    type ReferenceRssi = ReferenceRssi;
+    type PathLossExponent = PathLossExponent;
+    type MaxDistance = MaxDistance;
 }
 
 impl frame_system::offchain::SigningTypes for Test {

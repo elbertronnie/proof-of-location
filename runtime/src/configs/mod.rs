@@ -160,7 +160,9 @@ impl pallet_sudo::Config for Runtime {
 // Server configuration constants
 parameter_types! {
     pub const ServerUrl: &'static [u8] = b"localhost:3000";
-    pub const MaxDistanceMeters: u32 = 10;
+    pub const ReferenceRssi: i16 = -48;
+    pub const PathLossExponent: u8 = 40;
+    pub const MaxDistance: u32 = 10;
 }
 
 /// Configure the pallet-proof-of-location.
@@ -169,5 +171,7 @@ impl pallet_proof_of_location::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = pallet_proof_of_location::weights::SubstrateWeight<Runtime>;
     type ServerUrl = ServerUrl;
-    type MaxDistanceMeters = MaxDistanceMeters;
+    type ReferenceRssi = ReferenceRssi;
+    type PathLossExponent = PathLossExponent;
+    type MaxDistance = MaxDistance;
 }

@@ -103,7 +103,7 @@ mod offchain {
         /// Fetch RSSI data from the bluetooth server and submit signed transactions
         pub fn fetch_rssi_and_submit(_block_number: BlockNumberFor<T>) -> Result<(), &'static str> {
             use codec::{Decode, Encode};
-            use frame_system::offchain::{Signer, SendSignedTransaction};
+            use frame_system::offchain::{SendSignedTransaction, Signer};
 
             // Get the signer
             let signer = Signer::<T, T::AuthorityId>::all_accounts();
@@ -281,7 +281,7 @@ mod offchain {
 
         /// Submit location data as a signed transaction
         fn submit_location_data(location_data: LocationResponse) -> Result<(), &'static str> {
-            use frame_system::offchain::{Signer, SendSignedTransaction};
+            use frame_system::offchain::{SendSignedTransaction, Signer};
 
             // Convert f64 to i64 with fixed-point precision (multiply by 1_000_000)
             let latitude_fixed = (location_data.location.latitude * 1_000_000.0) as i64;

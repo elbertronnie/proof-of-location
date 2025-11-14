@@ -38,7 +38,7 @@ pub struct LocationResponse {
 }
 
 /// Calculate trimmed median error from RSSI values.
-/// 
+///
 /// Discards the highest 1/4 of values and returns the median of the remaining.
 pub fn trimmed_median_error(values: &mut [i16]) -> i16 {
     if values.len() < 4 {
@@ -63,9 +63,20 @@ pub fn trimmed_median_error(values: &mut [i16]) -> i16 {
 }
 
 /// Estimate RSSI based on distance between two locations.
-/// 
+///
 /// Uses path loss model: RSSI = r - n * 10 * log10(d).
-pub fn estimate_rssi(a_lat: i64, a_lon: i64, b_lat: i64, b_lon: i64) -> i16 {
+///
+/// # Type Parameters
+/// * `reference_rssi` - Reference RSSI value at 1 meter distance
+/// * `path_loss_exponent` - Path loss exponent multiplied by 10 (to support fractional values)
+pub fn estimate_rssi(
+    a_lat: i64,
+    a_lon: i64,
+    b_lat: i64,
+    b_lon: i64,
+    reference_rssi: i16,
+    path_loss_exponent: u8,
+) -> i16 {
     // Convert fixed-point coordinates back to f64
     let a_lat_f = a_lat as f64 / 1_000_000.0;
     let a_lon_f = a_lon as f64 / 1_000_000.0;
@@ -79,9 +90,12 @@ pub fn estimate_rssi(a_lat: i64, a_lon: i64, b_lat: i64, b_lon: i64) -> i16 {
     let dist = a.kilometers_to(&b) * 1000.0; // convert km to meters
 
     // Apply path loss model
-    const PATH_LOSS_EXPONENT: f64 = 3.0;
+    // path_loss_exponent is multiplied by 10, so divide by 10.0 to get actual value
+    let path_loss_exp = path_loss_exponent as f64 / 10.0;
+    let ref_rssi = reference_rssi as f64;
+
     let rssi = if dist > 0.0 {
-        -60.0 - PATH_LOSS_EXPONENT * 10.0 * libm::log10(dist)
+        ref_rssi - path_loss_exp * 10.0 * libm::log10(dist)
     } else {
         0.0
     };

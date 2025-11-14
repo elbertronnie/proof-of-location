@@ -141,15 +141,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         println!("Connected to Substrate node successfully\n");
 
         // Get max distance
-        let max_distance_meters = fetch_max_distance(&api);
-        println!(
-            "Max distance for neighbors: {} meters\n",
-            max_distance_meters
-        );
+        let max_distance = fetch_max_distance(&api);
+        println!("Max distance for neighbors: {} meters\n", max_distance);
 
         // Calculate neighbors once at startup
         println!("Calculating initial neighbor list...");
-        match calculate_neighbors(&api, our_bluetooth_address, max_distance_meters).await {
+        match calculate_neighbors(&api, our_bluetooth_address, max_distance).await {
             Ok(neighbors) => {
                 // Merge existing neighbors with new ones
                 let mut addr_lock = neighbor_addresses.lock().await;
@@ -165,7 +162,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         start_neighbor_event_listener(
             api.clone(),
             our_bluetooth_address,
-            max_distance_meters,
+            max_distance,
             Arc::clone(&neighbor_addresses),
         )
         .await;

@@ -2,16 +2,16 @@
 ///
 /// These functions are called by the RPC server to provide external access
 /// to pallet functionality without requiring on-chain transactions.
-
 use super::*;
 use frame_system::pallet_prelude::BlockNumberFor;
+use sp_core::Get;
 
 extern crate alloc;
 use alloc::vec::Vec;
 
 impl<T: Config> Pallet<T> {
     /// Calculate trust score for a specific account at a given block number.
-    /// 
+    ///
     /// Returns the trimmed median error of RSSI measurements.
     pub fn calculate_trust_score_for_account(
         block_number: BlockNumberFor<T>,
@@ -43,6 +43,8 @@ impl<T: Config> Pallet<T> {
                     location_data.longitude,
                     reporter_location.latitude,
                     reporter_location.longitude,
+                    T::ReferenceRssi::get(),
+                    T::PathLossExponent::get(),
                 );
 
                 // Calculate error
@@ -59,11 +61,9 @@ impl<T: Config> Pallet<T> {
     }
 
     /// Calculate trust scores for all accounts at a given block number.
-    /// 
+    ///
     /// Returns a vector of (AccountId, trust_score) tuples.
-    pub fn calculate_all_trust_scores(
-        block_number: BlockNumberFor<T>,
-    ) -> Vec<(T::AccountId, i16)> {
+    pub fn calculate_all_trust_scores(block_number: BlockNumberFor<T>) -> Vec<(T::AccountId, i16)> {
         let mut results = Vec::new();
 
         for (account, _) in AccountData::<T>::iter() {

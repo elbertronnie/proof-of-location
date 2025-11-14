@@ -303,7 +303,7 @@ fn publish_rssi_data_works() {
         let account2 = account(2);
         let address1 = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
         let address2 = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF];
-        // Close locations (within 10 meters - MaxDistanceMeters)
+        // Close locations (within 10 meters - MaxDistance)
         let latitude1 = 37_774_929; // 37.774929
         let longitude1 = -122_419_415; // -122.419415
         let latitude2 = 37_774_930; // ~0.11 meters away
@@ -406,7 +406,7 @@ fn publish_rssi_data_fails_if_distance_exceeds_maximum() {
         let account2 = account(2);
         let address1 = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
         let address2 = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF];
-        // Far apart locations (> 10 meters - MaxDistanceMeters)
+        // Far apart locations (> 10 meters - MaxDistance)
         let latitude1 = 37_774_929; // San Francisco
         let longitude1 = -122_419_415;
         let latitude2 = 40_712_776; // New York (very far)

@@ -250,7 +250,7 @@ mod dispatches {
 
             // Check that distance is within allowed maximum.
             ensure!(
-                distance <= T::MaxDistanceMeters::get() as f64,
+                distance <= T::MaxDistance::get() as f64,
                 Error::<T>::ExceedsMaxDistance
             );
 

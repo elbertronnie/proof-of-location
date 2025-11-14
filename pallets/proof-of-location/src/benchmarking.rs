@@ -105,7 +105,7 @@ mod benchmarks {
         let neighbor: T::AccountId = account("neighbor", 0, 0);
         let address1 = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
         let address2 = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF];
-        // Close locations (within MaxDistanceMeters)
+        // Close locations (within MaxDistance)
         let latitude1 = 37_774_929i64;
         let longitude1 = -122_419_415i64;
         let latitude2 = 37_774_930i64;
