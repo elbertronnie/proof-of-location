@@ -3,6 +3,8 @@ use frame_support::pallet_macros::*;
 /// A [`pallet_section`] that defines the dispatchable calls for the pallet.
 #[pallet_section]
 mod dispatches {
+    use sp_runtime::{traits::Saturating, SaturatedConversion};
+
     /// The pallet's dispatchable functions ([`Call`]s).
     #[pallet::call]
     impl<T: Config> Pallet<T> {
@@ -64,11 +66,15 @@ mod dispatches {
                 Error::<T>::AccountAlreadyRegistered
             );
 
+            // Get the current block number
+            let current_block = frame_system::Pallet::<T>::block_number();
+
             // Create location data
             let location_data = LocationData {
                 address,
                 latitude,
                 longitude,
+                last_updated: current_block.saturated_into::<u32>(),
             };
 
             // Update storage.
@@ -160,6 +166,17 @@ mod dispatches {
             let old_location_data = AccountData::<T>::get(&who).unwrap();
             let old_address = old_location_data.address;
 
+            // Get the current block number
+            let current_block = frame_system::Pallet::<T>::block_number();
+
+            // Check if cooldown period has elapsed
+            let last_updated_block: BlockNumberFor<T> = old_location_data.last_updated.into();
+            let blocks_elapsed = current_block.saturating_sub(last_updated_block);
+            ensure!(
+                blocks_elapsed >= T::UpdateCooldown::get(),
+                Error::<T>::NodeUpdateCooldownNotElapsed
+            );
+
             // If the address is changing, ensure the new address is not already taken
             if old_address != address {
                 ensure!(
@@ -177,6 +194,7 @@ mod dispatches {
                 address,
                 latitude,
                 longitude,
+                last_updated: current_block.saturated_into::<u32>(),
             };
 
             // Update storage

@@ -159,10 +159,11 @@ impl pallet_sudo::Config for Runtime {
 
 // Server configuration constants
 parameter_types! {
-    pub const ServerUrl: &'static [u8] = b"localhost:3000";
-    pub const ReferenceRssi: i16 = -48;
-    pub const PathLossExponent: u8 = 40;
-    pub const MaxDistance: u32 = 10;
+    pub const ServerUrl: &'static [u8] = b"localhost:3000"; // URL of the Bluetooth server
+    pub const ReferenceRssi: i16 = -48; // Reference RSSI at 1 meter
+    pub const PathLossExponent: u8 = 40; // Path loss exponent multiplied by 10
+    pub const MaxDistance: u32 = 10; // Maximum distance between neighbors in meters
+    pub const UpdateCooldown: BlockNumber = 86400; // 1 day cooldown between updates
 }
 
 /// Configure the pallet-proof-of-location.
@@ -174,4 +175,5 @@ impl pallet_proof_of_location::Config for Runtime {
     type ReferenceRssi = ReferenceRssi;
     type PathLossExponent = PathLossExponent;
     type MaxDistance = MaxDistance;
+    type UpdateCooldown = UpdateCooldown;
 }

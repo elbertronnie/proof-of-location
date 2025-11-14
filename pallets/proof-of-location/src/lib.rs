@@ -177,6 +177,10 @@ pub mod pallet {
         /// Maximum allowed distance between 2 nodes (in meters) to consider publishing RSSI data.
         #[pallet::constant]
         type MaxDistance: Get<u32>;
+
+        /// Minimum number of blocks that must elapse before a node can update its information again.
+        #[pallet::constant]
+        type UpdateCooldown: Get<BlockNumberFor<Self>>;
     }
 
     /// Storage for RSSI (Received Signal Strength Indicator) measurements.
@@ -269,5 +273,7 @@ pub mod pallet {
         BluetoothAddressNotRegistered,
         /// Distance between nodes exceeds maximum allowed distance
         ExceedsMaxDistance,
+        /// Node update cooldown period has not elapsed yet
+        NodeUpdateCooldownNotElapsed,
     }
 }

@@ -44,6 +44,7 @@ parameter_types! {
     pub const ReferenceRssi: i16 = -48;
     pub const PathLossExponent: u8 = 40;
     pub const MaxDistance: u32 = 10;
+    pub const UpdateCooldown: u64 = 5; // 5 blocks cooldown for testing
 }
 
 impl pallet_proof_of_location::Config for Test {
@@ -54,6 +55,7 @@ impl pallet_proof_of_location::Config for Test {
     type ReferenceRssi = ReferenceRssi;
     type PathLossExponent = PathLossExponent;
     type MaxDistance = MaxDistance;
+    type UpdateCooldown = UpdateCooldown;
 }
 
 impl frame_system::offchain::SigningTypes for Test {

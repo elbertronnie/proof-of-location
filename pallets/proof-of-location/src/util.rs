@@ -21,8 +21,9 @@ pub struct RssiResponse {
 #[derive(Encode, Decode, Debug, Clone, TypeInfo, MaxEncodedLen, PartialEq, Eq)]
 pub struct LocationData {
     pub address: [u8; 6],
-    pub latitude: i64,  // Latitude * 1_000_000
-    pub longitude: i64, // Longitude * 1_000_000
+    pub latitude: i64,     // Latitude * 1_000_000
+    pub longitude: i64,    // Longitude * 1_000_000
+    pub last_updated: u32, // Block number when node info was last updated
 }
 
 #[derive(Encode, Decode, Debug, Clone)]

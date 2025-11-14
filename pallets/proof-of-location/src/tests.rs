@@ -201,7 +201,8 @@ fn update_node_info_works() {
             old_longitude
         ));
 
-        System::set_block_number(2);
+        // Advance block number past cooldown period (UpdateCooldown is 5 blocks in tests)
+        System::set_block_number(7);
 
         // Update node info
         assert_ok!(ProofOfLocation::update_node_info(
@@ -262,6 +263,7 @@ fn update_node_info_fails_if_not_registered() {
 #[test]
 fn update_node_info_fails_if_new_address_taken() {
     new_test_ext().execute_with(|| {
+        System::set_block_number(1);
         let account1 = account(1);
         let account2 = account(2);
         let address1 = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
@@ -282,6 +284,9 @@ fn update_node_info_fails_if_new_address_taken() {
             -122_419_416
         ));
 
+        // Advance block number past cooldown period
+        System::set_block_number(7);
+
         // Try to update account1 to use address2 (already taken)
         assert_noop!(
             ProofOfLocation::update_node_info(
@@ -292,6 +297,61 @@ fn update_node_info_fails_if_new_address_taken() {
             ),
             Error::<Test>::BluetoothAddressAlreadyTaken
         );
+    });
+}
+
+#[test]
+fn update_node_info_fails_if_cooldown_not_elapsed() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        let account = account(1);
+        let old_address = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
+        let new_address = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF];
+        let old_latitude = 37_774_929;
+        let old_longitude = -122_419_415;
+        let new_latitude = 40_712_776;
+        let new_longitude = -74_005_974;
+
+        // Register node
+        assert_ok!(ProofOfLocation::register_node(
+            RuntimeOrigin::signed(account.clone()),
+            old_address,
+            old_latitude,
+            old_longitude
+        ));
+
+        // Try to update immediately (cooldown not elapsed)
+        System::set_block_number(2);
+        assert_noop!(
+            ProofOfLocation::update_node_info(
+                RuntimeOrigin::signed(account.clone()),
+                new_address,
+                new_latitude,
+                new_longitude
+            ),
+            Error::<Test>::NodeUpdateCooldownNotElapsed
+        );
+
+        // Try again at block 5 (still not enough, need >= 5 blocks elapsed)
+        System::set_block_number(5);
+        assert_noop!(
+            ProofOfLocation::update_node_info(
+                RuntimeOrigin::signed(account.clone()),
+                new_address,
+                new_latitude,
+                new_longitude
+            ),
+            Error::<Test>::NodeUpdateCooldownNotElapsed
+        );
+
+        // Now at block 6, cooldown has elapsed (6 - 1 = 5 blocks)
+        System::set_block_number(6);
+        assert_ok!(ProofOfLocation::update_node_info(
+            RuntimeOrigin::signed(account.clone()),
+            new_address,
+            new_latitude,
+            new_longitude
+        ));
     });
 }
 
