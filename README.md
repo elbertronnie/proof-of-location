@@ -1,232 +1,347 @@
-# Substrate Node Template
+# PoLka.Blue (Proof of Location)
 
-A fresh [Substrate](https://substrate.io/) node, ready for hacking :rocket:
+A decentralized blockchain-based system for verifying physical location through Bluetooth signal strength measurements. Built on [Substrate](https://substrate.io/), this project enables trustless location verification without relying on centralized authorities.
 
-A standalone version of this template is available for each release of Polkadot
-in the [Substrate Developer Hub Parachain
-Template](https://github.com/substrate-developer-hub/substrate-node-template/)
-repository. The parachain template is generated directly at each Polkadot
-release branch from the [Solochain Template in
-Substrate](https://github.com/paritytech/polkadot-sdk/tree/master/templates/solochain)
-upstream
+**Note:** This is a hackathon project demonstrating the concept of decentralized proof of location. In real life, LoRa is more applicable. I have used Bluetooth here for ease of prototyping with common hardware.
 
-It is usually best to use the stand-alone version to start a new project. All
-bugs, suggestions, and feature requests should be made upstream in the
-[Substrate](https://github.com/paritytech/polkadot-sdk/tree/master/substrate)
-repository.
+## Why This Matters
 
-## Getting Started
+### The Problem
 
-Depending on your operating system and Rust version, there might be additional
-packages required to compile this template. Check the
-[Install](https://docs.substrate.io/install/) instructions for your platform for
-the most common dependencies. Alternatively, you can use one of the [alternative
-installation](#alternatives-installations) options.
+Traditional location verification systems rely on centralized authorities (GPS satellites, cell towers, Wi-Fi databases) which create single points of failure and trust. These systems can be:
+- **Spoofed**: GPS signals can be faked with readily available hardware
+- **Controlled**: Central authorities can manipulate or censor location data
+- **Inaccessible**: May not work in certain regions or conditions
 
-Fetch solochain template code:
+### The Solution
 
+This project implements a **decentralized proof-of-location** system where:
+- **Nodes verify each other** through Bluetooth RSSI (Received Signal Strength Indicator) measurements
+- **Trust is earned** by consistently reporting accurate signal strength data
+- **No central authority** controls or validates location claims
+- **Blockchain immutability** creates an auditable history of location proofs
+
+### Use Cases
+
+- **Decentralized ride-sharing**: Verify driver/passenger proximity without GPS spoofing
+- **Supply chain**: Prove physical custody and location of goods
+- **Attendance verification**: Confirm physical presence at events or workplaces
+- **Geo-fenced DeFi**: Execute smart contracts based on verified location
+- **IoT device authentication**: Ensure devices are where they claim to be
+
+## User Interface
+
+### Simulator
+
+![Simulator UI](/assets/simulator.png)
+
+### Monitor
+
+![Monitor UI](/assets/monitor.png)
+
+## Quick Start
+
+### Prerequisites
+
+**On Debian/Ubuntu:**
 ```sh
-git clone https://github.com/paritytech/polkadot-sdk-solochain-template.git solochain-template
-
-cd solochain-template
+sudo apt-get update
+sudo apt-get install -y build-essential git clang curl libssl-dev llvm libudev-dev \
+    protobuf-compiler pkg-config libdbus-1-dev bluez
 ```
 
-### Build
+**Install Rust:**
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env
+```
 
-🔨 Use the following command to build the node without launching it:
+### 1. Build the Blockchain
 
 ```sh
 cargo build --release
 ```
 
-### Embedded Docs
+This builds:
+- `target/release/solochain-template-node` - The blockchain node
+- `target/release/server` - The BLE RSSI scanner
+- `target/release/simulator` - The testing simulator
+- `target/release/monitor` - The trust score visualizer
 
-After you build the project, you can use the following command to explore its
-parameters and subcommands:
-
-```sh
-./target/release/solochain-template-node -h
-```
-
-You can generate and view the [Rust
-Docs](https://doc.rust-lang.org/cargo/commands/cargo-doc.html) for this template
-with this command:
+**Build Issues?** If you encounter dependency issues or compilation errors, use the development container which provides a pre-configured build environment:
 
 ```sh
-cargo +nightly doc --open
+# Start the development container
+docker-compose up -d builder
+
+# Enter the container
+docker-compose exec builder bash
+
+# Inside the container, build the project
+cargo build --release
+
+# Exit the container
+exit
+
+# Stop the container when done
+docker-compose down
 ```
 
-### Single-Node Development Chain
+The development container includes all necessary dependencies (Rust toolchain, protobuf compiler, build tools, etc.) and ensures a consistent build environment across different systems.
 
-The following command starts a single-node development chain that doesn't
-persist state:
+### 2. Run the Blockchain
 
 ```sh
-./target/release/solochain-template-node --dev
+zombienet spawn zombienet.toml --provider native
 ```
 
-To purge the development chain's state, run the following command:
+This command will start a chain with 5 nodes.
+
+### 3. Run the Data Collection Server
+
+**Environment Variables**
+
+| Variable | Description | Required | Default |
+|----------|-------------|----------|---------|
+| `LATITUDE` | Your device's GPS latitude coordinate | Yes | - |
+| `LONGITUDE` | Your device's GPS longitude coordinate | Yes | - |
+| `PORT` | HTTP server listening port | No | `3000` |
+| `RPC_URL` | Substrate node WebSocket URL | No | `ws://127.0.0.1:9944` |
+
+**Option A: Real Hardware**
+
+Create `.env` file:
+```env
+LATITUDE=37.7749
+LONGITUDE=-122.4194
+PORT=3000
+RPC_URL=ws://127.0.0.1:9944
+```
+
+Run:
+```sh
+sudo ./target/release/server
+```
+
+**Option B: Real ARM64 Hardware (Raspberry Pi)**
+
+Build the ARM64 binary:
+```sh
+./build-server-aarch64.sh
+```
+
+Create `.env` file:
+```env
+LATITUDE=37.7749
+LONGITUDE=-122.4194
+PORT=3000
+RPC_URL=ws://127.0.0.1:9944
+```
+
+Run:
+```sh
+sudo ./target/aarch64-unknown-linux-gnu/release/server
+```
+
+**Option C: Simulator (no Bluetooth needed)**
 
 ```sh
-./target/release/solochain-template-node purge-chain --dev
+./target/release/simulator
 ```
 
-To start the development chain with detailed logging, run the following command:
+Then open `http://localhost:3000` to interact with the simulation.
+
+### 4. Monitor Trust Scores
 
 ```sh
-RUST_BACKTRACE=1 ./target/release/solochain-template-node -ldebug --dev
+./target/release/monitor
 ```
 
-Development chains:
+A GUI window opens showing real-time trust scores for all nodes.
 
-- Maintain state in a `tmp` folder while the node is running.
-- Use the **Alice** and **Bob** accounts as default validator authorities.
-- Use the **Alice** account as the default `sudo` account.
-- Are preconfigured with a genesis state (`/node/src/chain_spec.rs`) that
-  includes several pre-funded development accounts.
+### 5. Interact via Polkadot.js
 
+Open [https://polkadot.js.org/apps/?rpc=ws://127.0.0.1:9944](https://polkadot.js.org/apps/?rpc=ws://127.0.0.1:9944)
 
-To persist chain state between runs, specify a base path by running a command
-similar to the following:
+You can:
+- Register nodes manually
+- Query RSSI data
+- View trust scores via RPC
+- Monitor events and extrinsics
+
+## Development
+
+### Run Tests
 
 ```sh
-// Create a folder to use as the db base path
-$ mkdir my-chain-state
+# All tests
+cargo test
 
-// Use of that folder to store the chain state
-$ ./target/release/solochain-template-node --dev --base-path ./my-chain-state/
-
-// Check the folder structure created inside the base path after running the chain
-$ ls ./my-chain-state
-chains
-$ ls ./my-chain-state/chains/
-dev
-$ ls ./my-chain-state/chains/dev
-db keystore network
+# Specific package
+cargo test --package pallet-proof-of-location --features runtime-benchmarks
 ```
 
-### Connect with Polkadot-JS Apps Front-End
+### Generate Documentation
 
-After you start the node template locally, you can interact with it using the
-hosted version of the [Polkadot/Substrate
-Portal](https://polkadot.js.org/apps/#/explorer?rpc=ws://localhost:9944)
-front-end by connecting to the local node endpoint. A hosted version is also
-available on [IPFS](https://dotapps.io/). You can
-also find the source code and instructions for hosting your own instance in the
-[`polkadot-js/apps`](https://github.com/polkadot-js/apps) repository.
+```sh
+cargo doc --open
+```
 
-### Multi-Node Local Testnet
+## Configuration
 
-If you want to see the multi-node consensus algorithm in action, see [Simulate a
-network](https://docs.substrate.io/tutorials/build-a-blockchain/simulate-network/).
+Key pallet parameters (configured in [`runtime/src/lib.rs`](./runtime/src/lib.rs)):
 
-## Template Structure
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `ReferenceRssi` | RSSI at 1 meter distance | -48 dBm |
+| `PathLossExponent` | Signal attenuation rate (×10) | 40 (= 4.0) |
+| `MaxDistance` | Maximum neighbor distance | 10 meters |
+| `UpdateCooldown` | Minimum blocks between updates | 86400 blocks |
 
-A Substrate project such as this consists of a number of components that are
-spread across a few directories.
+## How It Works
 
-### Node
+### Architecture Overview
 
-A blockchain node is an application that allows users to participate in a
-blockchain network. Substrate-based blockchain nodes expose a number of
-capabilities:
+![Architechture Diagram](/assets/architecture.svg)
 
-- Networking: Substrate nodes use the [`libp2p`](https://libp2p.io/) networking
-  stack to allow the nodes in the network to communicate with one another.
-- Consensus: Blockchains must have a way to come to
-  [consensus](https://docs.substrate.io/fundamentals/consensus/) on the state of
-  the network. Substrate makes it possible to supply custom consensus engines
-  and also ships with several consensus mechanisms that have been built on top
-  of [Web3 Foundation
-  research](https://research.web3.foundation/Polkadot/protocols/NPoS).
-- RPC Server: A remote procedure call (RPC) server is used to interact with
-  Substrate nodes.
+### Core Mechanism
 
-There are several files in the `node` directory. Take special note of the
-following:
+1. **Registration**: Each node registers its Bluetooth MAC address and GPS coordinates on-chain
 
-- [`chain_spec.rs`](./node/src/chain_spec.rs): A [chain
-  specification](https://docs.substrate.io/build/chain-spec/) is a source code
-  file that defines a Substrate chain's initial (genesis) state. Chain
-  specifications are useful for development and testing, and critical when
-  architecting the launch of a production chain. Take note of the
-  `development_config` and `testnet_genesis` functions. These functions are
-  used to define the genesis state for the local development chain
-  configuration. These functions identify some [well-known
-  accounts](https://docs.substrate.io/reference/command-line-tools/subkey/) and
-  use them to configure the blockchain's initial state.
-- [`service.rs`](./node/src/service.rs): This file defines the node
-  implementation. Take note of the libraries that this file imports and the
-  names of the functions it invokes. In particular, there are references to
-  consensus-related topics, such as the [block finalization and
-  forks](https://docs.substrate.io/fundamentals/consensus/#finalization-and-forks)
-  and other [consensus
-  mechanisms](https://docs.substrate.io/fundamentals/consensus/#default-consensus-models)
-  such as Aura for block authoring and GRANDPA for finality.
+2. **RSSI Collection**: Nodes continuously measure Bluetooth signal strength from nearby neighbors and publish this data to the blockchain
 
+3. **Distance Validation**: The system calculates expected distance between nodes using GPS coordinates (Haversine formula) and rejects measurements from nodes too far apart
 
-### Runtime
+4. **Trust Score Calculation**: 
+   - For each RSSI measurement, calculate the **expected** signal strength using GPS distance and the log-distance path loss model:
+     ```
+     RSSI_expected = r - n × 10 × log₁₀(d)
+     ```
+     Where:
+     - `r` = reference RSSI at 1 meter
+     - `n` = path loss exponent (environmental factor)
+     - `d` = GPS-calculated distance in meters
+   
+   - Compare **measured** vs **expected** RSSI to calculate error
+   - Aggregate errors over multiple measurements using trimmed median (discarding worst 25%)
+   - Lower error = higher trust (honest reporting)
 
-In Substrate, the terms "runtime" and "state transition function" are analogous.
-Both terms refer to the core logic of the blockchain that is responsible for
-validating blocks and executing the state changes they define. The Substrate
-project in this repository uses
-[FRAME](https://docs.substrate.io/learn/runtime-development/#frame) to construct
-a blockchain runtime. FRAME allows runtime developers to declare domain-specific
-logic in modules called "pallets". At the heart of FRAME is a helpful [macro
-language](https://docs.substrate.io/reference/frame-macros/) that makes it easy
-to create pallets and flexibly compose them to create blockchains that can
-address [a variety of needs](https://substrate.io/ecosystem/projects/).
+5. **Reputation**: Nodes that consistently report accurate RSSI measurements build trust scores, while dishonest nodes accumulating high errors can be identified and excluded
 
-Review the [FRAME runtime implementation](./runtime/src/lib.rs) included in this
-template and note the following:
+## Project Structure
 
-- This file configures several pallets to include in the runtime. Each pallet
-  configuration is defined by a code block that begins with `impl
-  $PALLET_NAME::Config for Runtime`.
-- The pallets are composed into a single runtime by way of the
-  [#[runtime]](https://paritytech.github.io/polkadot-sdk/master/frame_support/attr.runtime.html)
-  macro, which is part of the [core FRAME pallet
-  library](https://docs.substrate.io/reference/frame-pallets/#system-pallets).
+### 🔗 Blockchain Components
 
-### Pallets
+#### [`pallets/proof-of-location/`](./pallets/proof-of-location/)
+The core Substrate pallet implementing:
+- Node registration with Bluetooth addresses and GPS coordinates
+- RSSI data storage and validation
+- Distance-based proximity checks
+- Offchain worker for automated data collection
+- Runtime APIs for trust score calculation
 
-The runtime in this project is constructed using many FRAME pallets that ship
-with [the Substrate
-repository](https://github.com/paritytech/polkadot-sdk/tree/master/substrate/frame) and a
-template pallet that is [defined in the
-`pallets`](./pallets/template/src/lib.rs) directory.
+**See [pallet documentation](./pallets/proof-of-location/README.md)**
 
-A FRAME pallet is comprised of a number of blockchain primitives, including:
+#### [`runtime/`](./runtime/)
+The blockchain runtime that integrates the proof-of-location pallet with Substrate's core pallets (Balances, Timestamp, GRANDPA, Aura, etc.)
 
-- Storage: FRAME defines a rich set of powerful [storage
-  abstractions](https://docs.substrate.io/build/runtime-storage/) that makes it
-  easy to use Substrate's efficient key-value database to manage the evolving
-  state of a blockchain.
-- Dispatchables: FRAME pallets define special types of functions that can be
-  invoked (dispatched) from outside of the runtime in order to update its state.
-- Events: Substrate uses
-  [events](https://docs.substrate.io/build/events-and-errors/) to notify users
-  of significant state changes.
-- Errors: When a dispatchable fails, it returns an error.
+#### [`node/`](./node/)
+The blockchain node implementation that:
+- Runs the consensus mechanism (Aura + GRANDPA)
+- Exposes RPC endpoints for querying trust scores
+- Manages peer-to-peer networking
+- Executes offchain workers
 
-Each pallet has its own `Config` trait which serves as a configuration interface
-to generically define the types and parameters it depends on.
+### 📡 Other Components
 
-## Alternatives Installations
+#### [`server/`](./server/)
+Bluetooth RSSI scanner that runs on each physical device to:
+- Advertise its presence via BLE
+- Scan for nearby devices
+- Measure and store RSSI values
+- Provide HTTP API for the offchain worker to fetch data
+- Automatically discover neighbors from the blockchain
 
-Instead of installing dependencies and building this source directly, consider
-the following alternatives.
+Supports both x86_64 and ARM64 (Raspberry Pi, etc.)
 
-### Nix
+**See [server documentation](./server/README.md)**
 
-Install [nix](https://nixos.org/) and
-[nix-direnv](https://github.com/nix-community/nix-direnv) for a fully
-plug-and-play experience for setting up the development environment. To get all
-the correct dependencies, activate direnv `direnv allow`.
+#### [`simulator/`](./simulator/)
+Testing tool that simulates 5 virtual Bluetooth nodes (Alice, Bob, Charlie, Dave, Eve) with:
+- Interactive web UI for moving nodes
+- Realistic RSSI calculation based on distance
+- Gaussian noise simulation
+- No Bluetooth hardware required
 
-### Docker
+Perfect for development and testing without physical devices.
 
-Please follow the [Substrate Docker instructions
-here](https://github.com/paritytech/polkadot-sdk/blob/master/substrate/docker/README.md) to
-build the Docker container with the Substrate Node Template binary.
+**See [simulator documentation](./simulator/README.md)**
+
+#### [`monitor/`](./monitor/)
+Real-time GUI visualization showing:
+- Trust score errors for all nodes
+- Updates on each new block
+- Interactive bar charts
+- Block-by-block history
+
+**See [monitor documentation](./monitor/README.md)**
+
+#### [`measurements/`](./measurements/)
+Real-world RSSI measurement data and analysis:
+- RSSI measurements collected at different distances (3, 6, and 12 steps)
+- Jupyter notebook for analyzing reference RSSI, path loss exponent, and noise distribution
+- Used to calibrate and validate the trust score algorithm
+
+The analysis helps determine optimal values for:
+- Reference RSSI at 1 meter
+- Path loss exponent for the environment
+- Expected noise characteristics
+
+## Technical Details
+
+### Trust Score Algorithm
+
+1. For each neighbor's RSSI measurement:
+   a. Calculate GPS distance using Haversine formula
+   b. Estimate RSSI: r - n × 10 × log₁₀(distance)
+   c. Error = |measured_RSSI - estimated_RSSI|
+
+2. Collect all errors for a node
+
+3. Remove worst 25% (trimmed)
+
+4. Return median of remaining errors
+
+Lower errors indicate more trustworthy nodes.
+
+### Why Trimmed Median?
+
+- **Robust to outliers**: Environmental interference can cause occasional bad readings
+- **Prevents gaming**: A few accurate measurements can't mask systematic dishonesty
+- **Fair**: Removes worst-case errors that may be beyond node's control
+
+## Security Considerations
+
+✅ **Sybil Resistance**: Trust scores make it expensive to create fake nodes with fabricated locations
+
+✅ **Collusion Detection**: Cross-validation between multiple nodes reveals coordinated lying
+
+✅ **Distance Validation**: Prevents distant nodes from claiming proximity
+
+⚠️ **Bluetooth Spoofing**: Advanced attackers with SDR equipment could fake BLE packets
+
+⚠️ **Environmental Factors**: Buildings, weather, and interference affect RSSI accuracy
+
+## License
+
+Unlicense (see [LICENSE](./LICENSE))
+
+## Acknowledgments
+
+This project was submitted to the "Build Resilient Apps with Polkadot Cloud" hackathon. The presentation is available [here](https://docs.google.com/presentation/d/1EBB28O8JHHKbdNopGoujANowPjOCaK3CN_OvF_tEO2Y/edit?usp=sharing). The project was built with the following technologies:
+
+- [Substrate](https://substrate.io/)
+- [Polkadot SDK](https://github.com/paritytech/polkadot-sdk)
+- [BlueZ](http://www.bluez.org/) for Bluetooth functionality
+- [egui](https://github.com/emilk/egui) for GUI development
+- [axum](https://github.com/tokio-rs/axum) for HTTP server
