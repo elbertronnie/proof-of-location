@@ -151,23 +151,44 @@ sudo ./target/aarch64-unknown-linux-gnu/release/server
 
 Then open `http://localhost:3000` to interact with the simulation.
 
-### 4. Monitor Trust Scores
+### 4. Set Server Config
+
+If you have chosen **Option A** or **Option B** for the server, you will need to specify the url of your server to the blockchain.
+
+Use the configuration script:
+```sh
+./configure-url-port.sh <RPC_URL> <ACCOUNT> <SERVER_URL>
+```
+
+Examples:
+```sh
+# Configure Alice's node (default validator on port 9944)
+./configure-url-port.sh ws://localhost:9944 //Alice localhost:3000
+
+# Configure Bob's node (validator on port 9945)
+./configure-url-port.sh ws://localhost:9945 //Bob localhost:3001
+
+# Configure with IP address
+./configure-url-port.sh ws://localhost:9946 //Charlie 192.168.1.100:3002
+```
+
+**Manual Configuration via Polkadot.js:**
+
+If you prefer to configure manually:
+1. Open [Polkadot.js Apps](https://polkadot.js.org/apps/?rpc=ws://127.0.0.1:9944)
+2. Navigate to **Developer** → **Extrinsics**
+3. Select the account (e.g., Alice)
+4. Choose extrinsic: `proofOfLocation` → `setServerConfig(server_url)`
+5. Enter your server URL
+6. Submit the transaction
+
+### 5. Monitor Trust Scores
 
 ```sh
 ./target/release/monitor
 ```
 
 A GUI window opens showing real-time trust scores for all nodes.
-
-### 5. Interact via Polkadot.js
-
-Open [https://polkadot.js.org/apps/?rpc=ws://127.0.0.1:9944](https://polkadot.js.org/apps/?rpc=ws://127.0.0.1:9944)
-
-You can:
-- Register nodes manually
-- Query RSSI data
-- View trust scores via RPC
-- Monitor events and extrinsics
 
 ## Development
 
@@ -308,9 +329,11 @@ The analysis helps determine optimal values for:
 
 2. Collect all errors for a node
 
-3. Remove worst 25% (trimmed)
+3. Proceed if number of errors > 3, else return None (insufficient data)
 
-4. Return median of remaining errors
+4. Remove worst 25% (trimmed)
+
+5. Return median of remaining errors
 
 Lower errors indicate more trustworthy nodes.
 
@@ -319,6 +342,12 @@ Lower errors indicate more trustworthy nodes.
 - **Robust to outliers**: Environmental interference can cause occasional bad readings
 - **Prevents gaming**: A few accurate measurements can't mask systematic dishonesty
 - **Fair**: Removes worst-case errors that may be beyond node's control
+
+### Why greater than 3?
+
+- **3 distances = unique location**: 3 distance measurements from 3 known points uniquely determine a position on Earth (trilateration principle)
+- **GPS analogy**: GPS requires at least 3 satellites visible to calculate position
+- **Fault tolerance**: Requiring > 3 (not = 3) accounts for one potentially misbehaving or compromised node
 
 ## Security Considerations
 
@@ -338,10 +367,13 @@ Unlicense (see [LICENSE](./LICENSE))
 
 ## Acknowledgments
 
-This project was submitted to the "Build Resilient Apps with Polkadot Cloud" hackathon. The presentation is available [here](https://docs.google.com/presentation/d/1EBB28O8JHHKbdNopGoujANowPjOCaK3CN_OvF_tEO2Y/edit?usp=sharing). The project was built with the following technologies:
+I would like to thank the organizers of the Polkadot Cloud hackathon for providing the opportunity to create a Blockchain. Special thanks to the Substrate and Polkadot communities for their invaluable resources and support. I would also like to thank my friends who provided me with their Raspberry Pi for testing and helped in recording the physical demo. 
+
+This project was submitted to the **Build Resilient Apps with Polkadot Cloud** hackathon. The presentation is available [here](https://docs.google.com/presentation/d/1EBB28O8JHHKbdNopGoujANowPjOCaK3CN_OvF_tEO2Y/edit?usp=sharing). The video is available [here](https://youtu.be/sdNUI49zW_4). This project was built with the following technologies:
 
 - [Substrate](https://substrate.io/)
 - [Polkadot SDK](https://github.com/paritytech/polkadot-sdk)
+- [Subxt](https://github.com/paritytech/subxt) for Substrate client interactions
 - [BlueZ](http://www.bluez.org/) for Bluetooth functionality
 - [egui](https://github.com/emilk/egui) for GUI development
 - [axum](https://github.com/tokio-rs/axum) for HTTP server
